@@ -61,7 +61,7 @@ export default function SearchPage() {
     } catch (error) {
       console.error(error);
       toast.error("Erro ao conectar com o backend", {
-        description: "Verifique se o seu servidor backend está rodando em http://localhost:3000",
+        description: `Verifique se o seu servidor backend está rodando em ${API_URL}`,
       });
     } finally {
       setSearching(false);
