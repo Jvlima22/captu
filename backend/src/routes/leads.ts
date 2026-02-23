@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
-import { searchLeads } from '../services/googlePlaces.js';
-import { generateSalesCopy } from '../services/aiService.js';
+import { searchLeads } from '../services/googlePlaces';
+import { generateSalesCopy } from '../services/aiService';
 
 
 const router = Router();

@@ -1,17 +1,37 @@
-// Centralização de configurações e credenciais do projeto
+// ─── Configuração Central de URLs ────────────────────────────────────────────
+//
+// Esta lógica detecta o ambiente automaticamente:
+//
+//  LOCAL  → frontend em localhost (qualquer porta) → usa http://localhost:3000
+//  VERCEL → frontend em captu.vercel.app            → usa https://captu-jqjg.vercel.app
+//
+// Para alterar a URL do backend de produção, basta mudar VITE_BACKEND_URL
+// nas variáveis de ambiente da Vercel (Settings → Environment Variables).
+// ─────────────────────────────────────────────────────────────────────────────
 
-// API_URL aponta para o backend correto automaticamente:
-// - Em localhost: usa http://localhost:3000 (ou VITE_API_URL do .env)
-// - Em produção (captu.vercel.app ou qualquer outro host): usa o backend da Vercel
 const isLocalhost =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1");
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname.startsWith('192.168.') ||  // rede local
+        window.location.hostname.startsWith('10.'));        // rede local corporativa
 
-export const API_URL = isLocalhost
-    ? (import.meta.env.VITE_API_URL || "http://localhost:3000")
-    : "https://captu-jqjg.vercel.app";
+// VITE_BACKEND_URL → variável de ambiente do Vite (opcional, sobrescreve tudo)
+// Em desenvolvimento, o .env.local pode definir isso para um backend alternativo.
+const envBackendUrl = import.meta.env.VITE_API_URL as string | undefined;
 
-// As credenciais do Supabase (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY)
-// são lidas diretamente no arquivo de inicialização do cliente Supabase,
-// localizado em 'src/integrations/supabase/client.ts'.
+// URL pública do backend em produção na Vercel
+const PRODUCTION_BACKEND_URL = 'https://captu-jqjg.vercel.app';
+
+// URL do backend local (padrão Express na porta 3000)
+const LOCAL_BACKEND_URL = 'http://localhost:3000';
+
+export const API_URL: string = envBackendUrl
+    ? envBackendUrl                                        // Variável de ambiente prevalece
+    : isLocalhost
+        ? LOCAL_BACKEND_URL                                // Desenvolvimento local
+        : PRODUCTION_BACKEND_URL;                         // Produção (Vercel)
+
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+// Lidas no cliente Supabase em src/integrations/supabase/client.ts
+// ─────────────────────────────────────────────────────────────────────────────

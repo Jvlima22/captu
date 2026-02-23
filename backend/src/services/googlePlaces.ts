@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { calculateScore, LeadData } from './leadScoring.js';
+import { calculateScore, LeadData } from './leadScoring';
 
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
