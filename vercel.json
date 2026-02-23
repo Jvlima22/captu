@@ -2,10 +2,11 @@
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install && cd backend && npm install",
+  "installCommand": "npm install",
   "functions": {
     "api/index.ts": {
-      "runtime": "@vercel/node@4"
+      "runtime": "@vercel/node@4",
+      "maxDuration": 30
     }
   },
   "rewrites": [

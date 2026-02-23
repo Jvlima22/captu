@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { EvolutionService } from '../services/evolution';
+import { EvolutionService } from '../services/evolution.js';
 
 const router = Router();
 
