@@ -1,15 +1,11 @@
 // Centralização de configurações e credenciais do projeto
 
-// Verifica se o projeto está rodando localmente
+// Em produção (Vercel), o backend roda no mesmo domínio via vercel.json (rotas /api/*),
+// portanto a URL base deve ser vazia para usar paths relativos (ex: /api/leads).
+// Em desenvolvimento local, o backend sobe separado em localhost:3000.
 const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
-// Lê as URLs da API a partir das variáveis de ambiente definidas no arquivo .env
-const apiUrlDev = import.meta.env.VITE_API_URL;
-const apiUrlProd = import.meta.env.VITE_API_URL_PRODUCTION;
-
-// Define a URL da API baseada no contexto (Local vs Rede/Produção)
-// Esta lógica permite que o mesmo build funcione em ambos os ambientes.
-export const API_URL = isLocal ? apiUrlDev : apiUrlProd;
+export const API_URL = isLocal ? (import.meta.env.VITE_API_URL || "http://localhost:3000") : "";
 
 // As credenciais do Supabase (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY)
 // são lidas diretamente no arquivo de inicialização do cliente Supabase,

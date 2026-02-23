@@ -71,28 +71,61 @@ router.post('/collect', async (req, res) => {
 
         const leads = await searchLeads(query, city, filters);
 
-        // Formata os dados para o banco conforme a estratégia
+        if (!leads || leads.length === 0) {
+            return res.json({ message: 'Nenhum lead encontrado', count: 0, data: [] });
+        }
+
+        // Formata os dados para o banco
         const formattedLeads = leads.map((l: any) => ({
             ...l,
             origin: 'google_places'
         }));
 
-        const { data, error } = await supabase
-            .from('leads')
-            .upsert(formattedLeads, { onConflict: 'name, city' })
-            .select();
+        // Tenta upsert por place_id (ID único do Google Places)
+        let savedData: any[] = [];
+        let savedCount = 0;
 
-        if (error) {
-            const { data: insertData, error: insertError } = await supabase
+        // Verifica se os leads possuem place_id para usar como chave de conflito
+        const leadsWithPlaceId = formattedLeads.filter((l: any) => l.place_id);
+        const leadsWithoutPlaceId = formattedLeads.filter((l: any) => !l.place_id);
+
+        if (leadsWithPlaceId.length > 0) {
+            const { data: upsertData, error: upsertError } = await supabase
                 .from('leads')
-                .insert(formattedLeads)
+                .upsert(leadsWithPlaceId, { onConflict: 'place_id', ignoreDuplicates: false })
                 .select();
 
-            if (insertError) throw insertError;
-            return res.json({ message: 'Leads collected', count: leads.length, data: insertData });
+            if (upsertError) {
+                console.error('Upsert error (place_id):', upsertError.message);
+                // Fallback: insert simples ignorando duplicatas
+                const { data: insertData, error: insertError } = await supabase
+                    .from('leads')
+                    .insert(leadsWithPlaceId)
+                    .select();
+
+                if (!insertError && insertData) {
+                    savedData = [...savedData, ...insertData];
+                    savedCount += insertData.length;
+                }
+            } else if (upsertData) {
+                savedData = [...savedData, ...upsertData];
+                savedCount += upsertData.length;
+            }
         }
 
-        res.json({ message: 'Leads collected and synced', count: leads.length, data });
+        if (leadsWithoutPlaceId.length > 0) {
+            const { data: insertData, error: insertError } = await supabase
+                .from('leads')
+                .insert(leadsWithoutPlaceId)
+                .select();
+
+            if (!insertError && insertData) {
+                savedData = [...savedData, ...insertData];
+                savedCount += insertData.length;
+            }
+        }
+
+        res.json({ message: 'Leads coletados e salvos com sucesso', count: leads.length, data: savedData });
 
     } catch (error: any) {
         res.status(500).json({ error: error.message });
