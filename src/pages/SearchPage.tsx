@@ -141,7 +141,7 @@ export default function SearchPage() {
               {/* Grid de Filtros */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Card: Raio de Busca */}
-                <div className="p-5 rounded-xl bg-gradient-to-br from-primary/5 to-transparent border border-border/50 hover:border-primary/30 transition-all space-y-3">
+                <div className="p-5 rounded-xl bg-gradient-to-br from-primary/5 to-transparent border border-slate-300 dark:border-slate-700 hover:border-primary/30 transition-all space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -172,7 +172,7 @@ export default function SearchPage() {
                 </div>
 
                 {/* Card: Avaliação Mínima */}
-                <div className="p-5 rounded-xl bg-gradient-to-br from-amber-500/5 to-transparent border border-border/50 hover:border-amber-500/30 transition-all space-y-3">
+                <div className="p-5 rounded-xl bg-gradient-to-br from-amber-500/5 to-transparent border border-slate-300 dark:border-slate-700 hover:border-amber-500/30 transition-all space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
@@ -210,7 +210,7 @@ export default function SearchPage() {
                 </div>
 
                 {/* Card: Número Mínimo de Avaliações */}
-                <div className="p-5 rounded-xl bg-gradient-to-br from-blue-500/5 to-transparent border border-border/50 hover:border-blue-500/30 transition-all space-y-3">
+                <div className="p-5 rounded-xl bg-gradient-to-br from-blue-500/5 to-transparent border border-slate-300 dark:border-slate-700 hover:border-blue-500/30 transition-all space-y-3">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                       <Star className="h-4 w-4 text-blue-500" />
@@ -236,7 +236,7 @@ export default function SearchPage() {
                 </div>
 
                 {/* Card: Filtros Rápidos */}
-                <div className="p-5 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border/50 space-y-3">
+                <div className="p-5 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-slate-300 dark:border-slate-700 space-y-3">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
                       <Filter className="h-4 w-4 text-foreground" />

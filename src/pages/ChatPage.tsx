@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -82,7 +83,8 @@ interface Message {
 }
 
 export default function ChatPage() {
-    const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+    const [searchParams] = useSearchParams();
+    const [selectedLeadId, setSelectedLeadId] = useState<string | null>(searchParams.get("leadId"));
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<string | null>(null);
     const [newMessage, setNewMessage] = useState("");
@@ -92,6 +94,14 @@ export default function ChatPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const queryClient = useQueryClient();
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Sync selectedLeadId with search params
+    useEffect(() => {
+        const urlLeadId = searchParams.get("leadId");
+        if (urlLeadId && urlLeadId !== selectedLeadId) {
+            setSelectedLeadId(urlLeadId);
+        }
+    }, [searchParams, selectedLeadId]);
 
     const commonEmojis = ["😊", "👍", "🤝", "🚀", "💡", "📅", "✅", "📍", "💰", "🙏", "📞", "👋"];
 
@@ -365,7 +375,7 @@ export default function ChatPage() {
                                                 {lead.name.substring(0, 2).toUpperCase()}
                                             </AvatarFallback>
                                         </Avatar>
-                                        {(presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'available' || presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'composing') && (
+                                        {(lead.phone && (presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'available' || presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'composing')) && (
                                             <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-background" />
                                         )}
                                     </div>
@@ -386,7 +396,7 @@ export default function ChatPage() {
                                         </div>
 
                                         <p className="text-xs text-muted-foreground truncate line-clamp-1">
-                                            {presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'composing' ? (
+                                            {lead.phone && presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'composing' ? (
                                                 <span className="text-emerald-500 font-medium animate-pulse">Digitando...</span>
                                             ) : (
                                                 lead.last_message || "Iniciar conversa..."
@@ -428,12 +438,12 @@ export default function ChatPage() {
                                 <div>
                                     <h2 className="font-bold text-sm leading-tight">{selectedLead.name}</h2>
                                     <div className="flex items-center gap-2">
-                                        {presenceMap[selectedLead.phone.replace(/\D/g, '')]?.status === 'composing' ? (
+                                        {selectedLead.phone && presenceMap[selectedLead.phone.replace(/\D/g, '')]?.status === 'composing' ? (
                                             <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium lowercase">
                                                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" />
                                                 Digitando...
                                             </span>
-                                        ) : presenceMap[selectedLead.phone.replace(/\D/g, '')]?.status === 'available' ? (
+                                        ) : selectedLead.phone && presenceMap[selectedLead.phone.replace(/\D/g, '')]?.status === 'available' ? (
                                             <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium lowercase">
                                                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                                                 Online agora

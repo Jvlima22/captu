@@ -128,7 +128,7 @@
 
 @layer utilities {
   .glass-card {
-    @apply bg-card/80 backdrop-blur-sm border border-border/50 shadow-sm;
+    @apply bg-card/80 backdrop-blur-sm border border-slate-300 dark:border-slate-700 shadow-sm;
   }
 
   .metric-glow {

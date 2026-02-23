@@ -322,36 +322,37 @@ export default function LeadsPage() {
         </div>
       </div>
       {/* Leads List */}
-      <div className="glass-card rounded-xl overflow-hidden border border-border/50">
+      <div className="glass-card rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700">
         {/* Desktop Table View */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="py-4 px-4 w-10">
+                <th className="py-4 px-6 w-14">
                   <Checkbox
                     checked={filtered.length > 0 && selectedLeadIds.length === filtered.length}
                     onCheckedChange={toggleAllSelection}
                   />
                 </th>
-                <th className="text-left py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Empresa</th>
-                <th className="text-left py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cidade</th>
-                <th className="text-left py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Score</th>
-                <th className="text-left py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Status</th>
-                <th className="text-center py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ações</th>
+                <th className="text-left py-4 px-32 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[200px]">Empresa</th>
+                <th className="text-left py-4 px-16 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cidade</th>
+                <th className="text-left py-4 px-12 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Segmento</th>
+                <th className="text-center py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-32">Score</th>
+                <th className="text-center py-4 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-32">Status</th>
+                <th className="text-center py-4 px-6 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-24">Ações</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center">
+                  <td colSpan={7} className="py-12 text-center">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary mb-2" />
                     <p className="text-muted-foreground">Carregando leads...</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     {search ? "Nenhum lead encontrado." : "Nenhum lead cadastrado ainda."}
                   </td>
                 </tr>
@@ -362,29 +363,39 @@ export default function LeadsPage() {
                     className={`border-b border-border/50 hover:bg-muted/50 transition-colors cursor-pointer ${selectedLeadIds.includes(lead.id) ? 'bg-primary/5' : ''}`}
                     onClick={() => toggleLeadSelection(lead.id)}
                   >
-                    <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                    <td className="py-4 px-6" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedLeadIds.includes(lead.id)}
                         onCheckedChange={() => toggleLeadSelection(lead.id)}
                       />
                     </td>
                     <td className="py-4 px-4">
-                      <div>
-                        <div className="font-medium text-foreground">{lead.name}</div>
-                        <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-primary/20 bg-primary/5 text-primary mt-1">
-                          {lead.segment || "Sem segmento"}
-                        </Badge>
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 shrink-0 rounded-lg bg-muted border border-border overflow-hidden group/img relative">
+                          {lead.image_url ? (
+                            <img src={lead.image_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center">
+                              <Building2 className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="font-semibold text-foreground">{lead.name}</div>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-muted-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="h-3 w-3" />
-                        {lead.city}, {lead.state}
+                    <td className="py-4 px-12 text-muted-foreground">
+                      <div className="h-10 flex items-center">
+                        <span className="truncate">{lead.city}, {lead.state}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-center"><ScoreBadge score={lead.score} /></td>
+                    <td className="py-4 px-12 text-muted-foreground">
+                      <div className="h-10 flex items-center">
+                        {lead.segment || "Sem segmento"}
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-center"><div className="flex justify-center"><ScoreBadge score={lead.score} /></div></td>
                     <td className="py-4 px-4 text-center"><StatusBadge status={lead.status as any} /></td>
-                    <td className="py-4 px-4">
+                    <td className="py-4 px-6">
                       <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="sm"
@@ -430,35 +441,50 @@ export default function LeadsPage() {
             filtered.map((lead) => (
               <div
                 key={lead.id}
-                className={`flex flex-col py-4 px-4 gap-2 rounded-xl border border-border/50 shadow-sm transition-all active:scale-[0.98] active:bg-muted/50 ${selectedLeadIds.includes(lead.id) ? 'bg-primary/5 border-primary/20' : 'bg-card'}`}
+                className={`flex flex-col py-4 px-4 gap-2 rounded-xl border border-slate-300 dark:border-slate-700 shadow-sm transition-all active:scale-[0.98] active:bg-muted/50 ${selectedLeadIds.includes(lead.id) ? 'bg-primary/5 border-primary/20' : 'bg-card'}`}
               >
-                <div className="flex justify-between items-start">
-                  <div className="flex gap-2.5 items-start">
-                    <div className="pt-1">
-                      <Checkbox
-                        checked={selectedLeadIds.includes(lead.id)}
-                        onCheckedChange={() => toggleLeadSelection(lead.id)}
-                        className="h-4 w-4 opacity-70"
-                      />
-                    </div>
-                    <div className="min-w-0 pr-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-sm font-bold text-foreground leading-tight truncate">{lead.name}</h4>
-                        <StatusBadge status={lead.status as any} />
+                <div className="flex flex-col gap-1.5 w-full">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex gap-2.5 items-center min-w-0 flex-1">
+                      <div className="pt-0">
+                        <Checkbox
+                          checked={selectedLeadIds.includes(lead.id)}
+                          onCheckedChange={() => toggleLeadSelection(lead.id)}
+                          className="h-4 w-4 opacity-70"
+                        />
                       </div>
-                      <p className="text-[10px] text-muted-foreground leading-none mt-1">{lead.segment || "Sem segmento"}</p>
+                      <div className="h-8 w-8 shrink-0 rounded-lg bg-muted border border-border overflow-hidden relative">
+                        {lead.image_url ? (
+                          <img src={lead.image_url} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex flex-1 items-center gap-2">
+                        <h4 className="text-sm font-bold text-foreground leading-tight truncate">{lead.name}</h4>
+                        <div className="shrink-0 scale-90 origin-left">
+                          <StatusBadge status={lead.status as any} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      <ScoreBadge score={lead.score} />
                     </div>
                   </div>
-                  <ScoreBadge score={lead.score} />
+                  <div className="pl-[78px] flex items-center gap-2 flex-wrap mt-1.5">
+                    <p className="text-[10px] text-muted-foreground leading-none">{lead.segment || "Sem segmento"}</p>
+                    <span className="text-[10px] text-muted-foreground/30">•</span>
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground opacity-80">
+                      <MapPin className="h-2.5 w-2.5" />
+                      {lead.city}, {lead.state}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between mt-[-4px]">
-                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground opacity-80">
-                    <MapPin className="h-3 w-3" />
-                    {lead.city}, {lead.state}
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
+                <div className="flex items-center justify-end mt-[-4px]">
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     <Button
                       size="sm"
                       variant="outline"

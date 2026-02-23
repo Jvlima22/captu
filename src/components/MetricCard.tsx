@@ -11,15 +11,15 @@ interface MetricCardProps {
 
 export default function MetricCard({ title, value, change, changeType = "neutral", icon: Icon }: MetricCardProps) {
   return (
-    <div className="glass-card rounded-xl p-5 metric-glow animate-fade-in">
+    <div className="glass-card rounded-xl p-4 md:p-5 metric-glow animate-fade-in">
       <div className="flex items-start justify-between">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+        <div className="space-y-0.5 md:space-y-1 min-w-0 flex-1">
+          <p className="text-[10px] md:text-[11px] font-medium text-muted-foreground whitespace-nowrap truncate">{title}</p>
+          <p className="text-lg md:text-xl font-bold tracking-tight text-foreground">{value}</p>
           {change && (
             <p
               className={cn(
-                "text-xs font-medium",
+                "text-[9px] md:text-[10px] font-medium whitespace-nowrap truncate",
                 changeType === "positive" && "text-success",
                 changeType === "negative" && "text-destructive",
                 changeType === "neutral" && "text-muted-foreground"
@@ -29,8 +29,8 @@ export default function MetricCard({ title, value, change, changeType = "neutral
             </p>
           )}
         </div>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent">
-          <Icon className="h-5 w-5 text-accent-foreground" />
+        <div className="flex h-7 w-7 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-lg bg-accent ml-2">
+          <Icon className="h-3.5 w-3.5 md:h-4 w-4 text-accent-foreground" />
         </div>
       </div>
     </div>

@@ -232,9 +232,9 @@ export default function CampaignsPage() {
   return (
     <>
       <PageHeader title="Campanhas" description="Gerencie suas campanhas de prospecção automatizada">
-        <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nova Campanha
+        <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="h-9 px-3 sm:px-4 mt-2">
+          <Plus className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Nova Campanha</span>
         </Button>
       </PageHeader>
 
@@ -298,7 +298,7 @@ export default function CampaignsPage() {
           </Button>
         </div>
 
-        <div className="hidden md:flex items-center gap-1 bg-muted/30 p-1 rounded-lg border border-border/50">
+        <div className="hidden md:flex items-center gap-1 bg-muted/30 p-1 rounded-lg border border-slate-300 dark:border-slate-700">
           <Button
             variant={viewMode === "list" ? "default" : "ghost"}
             size="sm"
@@ -342,7 +342,7 @@ export default function CampaignsPage() {
           ))}
         </div>
       ) : (
-        <div className="glass-card rounded-xl overflow-hidden border border-border/50 hidden md:block">
+        <div className="glass-card rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 hidden md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/20">
@@ -507,7 +507,7 @@ export default function CampaignsPage() {
   function CampaignCard({ campaign }: { campaign: Campaign }) {
     const isSelected = selectedCampaignIds.includes(campaign.id);
     return (
-      <div className={`glass-card rounded-xl p-5 hover:shadow-lg transition-all border ${isSelected ? 'border-primary shadow-md bg-primary/5' : 'border-border/50'}`}>
+      <div className={`glass-card rounded-xl p-5 hover:shadow-lg transition-all border ${isSelected ? 'border-primary shadow-md bg-primary/5' : 'border-slate-300 dark:border-slate-700'}`}>
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             <Checkbox

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import { searchLeads } from '../services/googlePlaces';
+import { generateSalesCopy } from '../services/aiService';
 
 const router = Router();
 
@@ -73,7 +74,6 @@ router.post('/collect', async (req, res) => {
         // Formata os dados para o banco conforme a estratégia
         const formattedLeads = leads.map((l: any) => ({
             ...l,
-            has_own_website: !!l.website,
             origin: 'google_places'
         }));
 
@@ -194,6 +194,32 @@ router.delete('/bulk-delete', async (req, res) => {
 
         res.json({ message: 'Leads deleted successfully', count: leadIds.length });
     } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/leads/:id/generate-copy - Gera abordagem personalizada via IA
+router.post('/:id/generate-copy', async (req, res) => {
+    const { id } = req.params;
+    console.log(`[AI Copy] Requested for lead ID: ${id}`);
+    try {
+        const { data: lead, error } = await supabase
+            .from('leads')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error || !lead) {
+            console.error(`[AI Copy] Lead not found: ${id}`, error);
+            return res.status(404).json({ error: 'Lead not found' });
+        }
+
+        const copy = await generateSalesCopy(lead);
+        console.log(`[AI Copy] Generated successfully for: ${lead.name}`);
+
+        res.json({ copy });
+    } catch (error: any) {
+        console.error(`[AI Copy] Error: ${error.message}`);
         res.status(500).json({ error: error.message });
     }
 });

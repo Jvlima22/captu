@@ -4,7 +4,8 @@ import MetricCard from "@/components/MetricCard";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import ScoreBadge from "@/components/ScoreBadge";
-import { Users, Target, MessageSquare, TrendingUp, Handshake, Trophy, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Users, Target, MessageSquare, TrendingUp, Handshake, Trophy, Loader2, Activity, Sparkles, Wand2, Globe, Building2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, subMonths, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -32,6 +33,7 @@ interface Lead {
   user_ratings_total?: number;
   address?: string;
   has_own_website?: boolean;
+  image_url?: string | null;
 }
 
 export default function Dashboard() {
@@ -93,6 +95,9 @@ export default function Dashboard() {
   const wonLeads = leads?.filter((l) => l.status === "won").length || 0;
   const totalMessages = contactHistory?.length || 0;
   const responseRate = contactedLeads > 0 ? ((respondedLeads / contactedLeads) * 100).toFixed(1) : "0.0";
+
+  // Oportunidades de Alto Valor: Sem site e bons scores
+  const highValueOpportunities = leads?.filter(l => !l.has_own_website && l.score >= 40).slice(0, 4) || [];
 
   // Calculate weekly funnel data (last 4 weeks, Sem 1 = current week)
   const funnelData = Array.from({ length: 4 }, (_, i) => {
@@ -192,9 +197,67 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* High Value Opportunities - Estratégia CAPTU 3.0 */}
+      {highValueOpportunities.length > 0 && (
+        <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Oportunidades de Alto Valor (Sem Site)
+            </h3>
+            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
+              {highValueOpportunities.length} Sugestões
+            </Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {highValueOpportunities.map((opportunity) => (
+              <div
+                key={opportunity.id}
+                className="glass-card group p-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden"
+                onClick={() => handleViewDetails(opportunity)}
+              >
+                <div className="flex items-start gap-3 relative z-10">
+                  <div className="h-10 w-10 shrink-0 rounded-lg bg-muted overflow-hidden border border-border">
+                    {opportunity.image_url ? (
+                      <img src={opportunity.image_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center">
+                        <Building2 className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-sm font-bold text-foreground truncate">{opportunity.name}</h4>
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Globe className="h-3 w-3 text-destructive" />
+                      Sem Site Próprio
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-primary">{opportunity.score}</div>
+                    <div className="text-[8px] text-muted-foreground uppercase font-bold">Score</div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between relative z-10">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <MapPin className="h-3 w-3" />
+                    {opportunity.city}
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                {/* Visual highlight for "Opportunity" */}
+                <div className="absolute top-0 right-0 w-16 h-16 bg-primary/5 -mr-8 -mt-8 rounded-full blur-2xl group-hover:bg-primary/20 transition-all"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Funnel Chart */}
-        <div className="glass-card rounded-xl p-4 md:p-6">
+        <div className="glass-card rounded-xl p-4 md:p-6 border border-slate-300 dark:border-slate-700">
           <h3 className="text-sm font-semibold text-foreground mb-4">Funil de Conversão (Últimas 4 Semanas)</h3>
           {totalLeads > 0 ? (
             <div className="h-[220px] md:h-[260px] w-full">
@@ -226,7 +289,7 @@ export default function Dashboard() {
         </div>
 
         {/* Trend */}
-        <div className="glass-card rounded-xl p-4 md:p-6">
+        <div className="glass-card rounded-xl p-4 md:p-6 border border-slate-300 dark:border-slate-700">
           <h3 className="text-sm font-semibold text-foreground mb-4">Leads Contatados (Últimos 6 Meses)</h3>
           {contactedLeads > 0 ? (
             <div className="h-[220px] md:h-[260px] w-full">
@@ -321,24 +384,31 @@ export default function Dashboard() {
                   className="bg-card rounded-xl border border-border/50 shadow-sm py-5 px-4 flex flex-col gap-2.5 active:bg-muted/50 transition-all active:scale-[0.98]"
                   onClick={() => handleViewDetails(lead)}
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="min-w-0 flex-1 pr-2">
-                      <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
                         <h4 className="font-bold text-foreground leading-tight truncate">{lead.name}</h4>
-                        <StatusBadge status={lead.status as any} />
+                        <div className="shrink-0">
+                          <StatusBadge status={lead.status as any} />
+                        </div>
                       </div>
-                      <p className="text-[11px] text-muted-foreground leading-none mt-1">{lead.segment || "Sem segmento"}</p>
+                      <div className="shrink-0">
+                        <ScoreBadge score={lead.score} />
+                      </div>
                     </div>
-                    <ScoreBadge score={lead.score} />
-                  </div>
-                  <div className="flex items-center justify-between mt-[-8px]">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground opacity-80">
-                      <MapPin className="h-3 w-3" />
-                      {lead.city}, {lead.state}
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <p className="text-[11px] text-muted-foreground leading-none">{lead.segment || "Sem segmento"}</p>
+                        <span className="text-[10px] text-muted-foreground/30">•</span>
+                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground opacity-80">
+                          <MapPin className="h-2.5 w-2.5 shrink-0" />
+                          <span className="truncate">{lead.city}, {lead.state}</span>
+                        </div>
+                      </div>
+                      <button className="text-[10px] font-bold text-primary flex items-center gap-0.5 shrink-0 hover:underline">
+                        Ver detalhes <ChevronRight className="h-3 w-3" />
+                      </button>
                     </div>
-                    <button className="text-xs font-medium text-primary flex items-center gap-1">
-                      Ver detalhes <ChevronRight className="h-3 w-3" />
-                    </button>
                   </div>
                 </div>
               ))}
