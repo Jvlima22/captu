@@ -5,7 +5,15 @@ const router = Router();
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Inicialização segura para suportar deploy sem env vars
+let supabase: any;
+try {
+    supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+} catch (e) {
+    console.error('Failed to create Supabase client in campaigns route');
+    supabase = null;
+}
 
 /**
  * GET /api/campaigns/active-tasks
@@ -13,6 +21,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  * Esta rota atua como o "Cérebro" do sistema.
  */
 router.get('/active-tasks', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
     try {
         // 1. Buscar todas as campanhas ativas
         const { data: activeCampaigns, error: campError } = await supabase
@@ -94,7 +103,7 @@ router.get('/active-tasks', async (req, res) => {
                         .select('lead_id')
                         .eq('campaign_id', campaign.id);
 
-                    const excludedIds = alreadyContactedOrPending?.map(c => c.lead_id) || [];
+                    const excludedIds = alreadyContactedOrPending?.map((c: any) => c.lead_id) || [];
 
                     let query = supabase.from('leads').select('*').eq('status', 'new').not('phone', 'is', null);
 
@@ -175,6 +184,7 @@ router.get('/active-tasks', async (req, res) => {
  * Registra o sucesso de um envio e atualiza as métricas da campanha.
  */
 router.post('/:id/track-send', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
     const { id: campaignId } = req.params;
     const { lead_id, status = 'sent', message } = req.body;
 

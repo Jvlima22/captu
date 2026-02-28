@@ -51,10 +51,8 @@ const allowedOrigins = [
 
 const corsOptions: cors.CorsOptions = {
     origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        if (origin.endsWith('.vercel.app')) return callback(null, true);
-        callback(null, true); // Fallback mais permissivo para debug
+        // Liberal absoluto para teste de produção e debug
+        callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'apikey'],

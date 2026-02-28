@@ -6,7 +6,15 @@ const router = Router();
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Inicialização segura
+let supabase: any;
+try {
+    supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+} catch (e) {
+    console.error('Failed to create Supabase client in chat route');
+    supabase = null;
+}
 
 // POST /api/chat/send - Envia uma mensagem manualmente pelo sistema
 router.post('/send', async (req, res) => {
@@ -75,7 +83,7 @@ router.post('/webhook', async (req, res) => {
 
             // Criar canal de broadcast para notificar o frontend sem tocar no banco
             const channel = supabase.channel('presence-global');
-            channel.subscribe(async (status) => {
+            channel.subscribe(async (status: any) => {
                 if (status === 'SUBSCRIBED') {
                     await channel.send({
                         type: 'broadcast',
