@@ -49,7 +49,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const url = 'http://host.docker.internal:8080/message/sendText/CaptuComercial';\nconst lead = $node[\"Iterar Leads\"].json;\n\nlet result = { success: false, status: 0 };\n\ntry {\n  const response = await fetch(url, {\n    method: 'POST',\n    headers: {\n      'apikey': '54CC09C92EA6-4656-9C16-9E89179B4793',\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify({\n      number: lead.phone,\n      text: lead.message,\n      linkPreview: false\n    })\n  });\n  \n  const data = await response.json();\n  result = {\n    status: response.status,\n    response: data,\n    success: response.status >= 200 && response.status < 300\n  };\n} catch (err) {\n  result = {\n    status: 500,\n    error: err.message,\n    success: false\n  };\n}\n\nreturn [{ json: result }];"
+        "jsCode": "const url = 'https://evolution.tglsolutions.com.br/message/sendText/CaptuComercial';\nconst lead = $node[\"Iterar Leads\"].json;\n\nlet result = { success: false, status: 0 };\n\ntry {\n  const response = await fetch(url, {\n    method: 'POST',\n    headers: {\n      'apikey': '54CC09C92EA6-4656-9C16-9E89179B4793',\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify({\n      number: lead.phone,\n      text: lead.message,\n      linkPreview: false\n    })\n  });\n  \n  const data = await response.json();\n  result = {\n    status: response.status,\n    response: data,\n    success: response.status >= 200 && response.status < 300\n  };\n} catch (err) {\n  result = {\n    status: 500,\n    error: err.message,\n    success: false\n  };\n}\n\nreturn [{ json: result }];"
       },
       "id": "fe269bf3-b184-4bb4-b289-aa3576defe01",
       "name": "Evolution API (Código)",

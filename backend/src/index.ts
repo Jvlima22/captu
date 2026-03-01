@@ -32,12 +32,52 @@ if (!process.env.VERCEL) {
 
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import leadRoutes from './routes/leads';
 import campaignRoutes from './routes/campaigns';
 import chatRoutes from './routes/chat';
+import { WhatsAppService } from './services/whatsapp';
 
 const app = express();
+const httpServer = createServer(app);
 const port = process.env.PORT || 3000;
+
+// ─── Socket.io ───────────────────────────────────────────────────────────────
+const io = new Server(httpServer, {
+    cors: {
+        origin: '*', // Ajuste para produção se necessário
+        methods: ['GET', 'POST']
+    }
+});
+
+const whatsapp = WhatsAppService.getInstance();
+whatsapp.setIO(io);
+
+io.on('connection', (socket) => {
+    console.log(`\n[Navegador] Tela do Painel conectada (WebSocket ID: ${socket.id})`);
+    
+    // Obter status para log explícito
+    const status = whatsapp.getStatus();
+    if (status.isPaired) {
+        console.log(`[WhatsApp Status] ✅ CELULAR VINCULADO e ativo. Sincronizando tela...`);
+    } else {
+        console.log(`[WhatsApp Status] ❌ NENHUM CELULAR VINCULADO. Aguardando leitura do QR Code.`);
+    }
+    
+    // Enviar status atual ao conectar
+    socket.emit('whatsapp-connection-update', status);
+    
+    // Enviar histórico em cache se já existir (conecta quase instantâneo)
+    const history = whatsapp.getHistoryCache();
+    if (history && (history.chats.length > 0 || history.messages.length > 0)) {
+        socket.emit('whatsapp-history', history);
+    }
+
+    socket.on('disconnect', () => {
+        console.log(`[Navegador] Tela do Painel desconectada (WebSocket ID: ${socket.id})`);
+    });
+});
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -80,7 +120,7 @@ app.get('/', (_req, res) => {
 
 // ─── Inicialização local ──────────────────────────────────────────────────────
 if (!process.env.VERCEL) {
-    app.listen(port, () => {
+    httpServer.listen(port, () => {
         console.log(`\n🚀 Backend CAPTU rodando → http://localhost:${port}`);
         console.log('─'.repeat(50));
         console.log(`   SUPABASE_URL          : ${process.env.SUPABASE_URL ? '✅' : '❌ FALTANDO'}`);
@@ -89,8 +129,14 @@ if (!process.env.VERCEL) {
         console.log(`   GOOGLE_PLACES_API_KEY : ${process.env.GOOGLE_PLACES_API_KEY ? '✅' : '❌ FALTANDO'}`);
         console.log(`   EVOLUTION_API_URL     : ${process.env.EVOLUTION_API_URL ? '✅' : '❌ FALTANDO'}`);
         console.log('─'.repeat(50));
+
+        // Inicializar WhatsApp após o servidor estar de pé
+        whatsapp.initialize().catch(err => {
+            console.error('[WhatsApp] Falha ao inicializar motor nativo:', err);
+        });
     });
 }
 
 // Export para Vercel Serverless Functions
 export default app;
+

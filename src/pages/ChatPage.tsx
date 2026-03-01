@@ -1,32 +1,27 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import {
     Search,
-    MoreVertical,
-    Phone,
-    Video,
-    Info,
     CheckCheck,
     Smile,
     Paperclip,
     Send,
     Loader2,
-    Volume2,
-    ChevronLeft,
     MessageSquare,
-    User,
     Filter,
     MapPin,
     Globe,
     Star,
     Archive,
     Trash,
-    VideoOff,
+    ChevronLeft,
     ExternalLink,
     Image as ImageIcon,
-    FileText
+    FileText,
+    QrCode,
+    LogOut,
+    Users,
+    Pin
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -46,191 +41,338 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
     Sheet,
     SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
     SheetTrigger,
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { API_URL } from "@/config";
-import ScoreBadge from "@/components/ScoreBadge";
-import StatusBadge from "@/components/StatusBadge";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { io } from "socket.io-client";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
-interface ChatLead {
-    id: string;
-    name: string;
-    phone: string;
-    segment: string;
-    score: number;
-    status: string;
-    city: string;
-    state: string;
-    last_message?: string;
-    last_message_time?: string;
-    unread_count?: number;
-    image_url?: string;
+// ─── Interfaces de Tipagem Baseadas no Proxy ────────────────────────────────
+
+interface ProxyContact {
+    id: string; // JID
+    name?: string;
+    pushName?: string;
+    imgUrl?: string;
 }
 
-interface Message {
-    id: string;
-    message: string;
+interface ProxyMessage {
+    id: string; // Message ID
+    text: string;
     direction: 'inbound' | 'outbound';
-    status: string;
-    data_envio: string;
+    timestamp: number;
+    status: string; // sent, delivered, read (opcional)
+    sender?: string; // JID de quem enviou (útil para grupos)
+}
+
+interface ProxyChat {
+    id: string; // JID
+    name?: string; // Nome derivado (contato > pushName > JID)
+    lastMessage?: string;
+    lastMessageSender?: string; // PushName de quem mandou a última msgs no grupo
+    lastMessageTime?: number;
+    pinned?: number; // Timestamp se for fixado
+    unreadCount: number;
+    type: 'individual' | 'group' | 'community';
+}
+
+// ─── Funções Auxiliares ─────────────────────────────────────────────────────
+
+function extractTextFromWhatsAppMessage(msg: any): string {
+    if (!msg.message) return "";
+    return msg.message?.conversation ||
+           msg.message?.extendedTextMessage?.text ||
+           msg.message?.imageMessage?.caption ||
+           msg.message?.videoMessage?.caption ||
+           (msg.message?.buttonsResponseMessage ? `Botão: ${msg.message.buttonsResponseMessage.selectedDisplayText}` : '') ||
+           (msg.message?.imageMessage ? '[Imagem]' : 
+            msg.message?.videoMessage ? '[Vídeo]' : 
+            msg.message?.audioMessage ? '[Áudio]' : 
+            msg.message?.documentMessage ? '[Documento]' : 
+            msg.message?.contactMessage ? '[Contato]' : 
+            msg.message?.locationMessage ? '[Localização]' : 
+            msg.message?.stickerMessage ? '[Figurinha]' : 
+            msg.message?.reactionMessage ? '[Reação]' : 
+            msg.message?.pollCreationMessage ? '[Enquete]' : 
+            msg.message?.protocolMessage ? '[Mensagem de Sistema]' : '');
 }
 
 export default function ChatPage() {
     const [searchParams] = useSearchParams();
-    const [selectedLeadId, setSelectedLeadId] = useState<string | null>(searchParams.get("leadId"));
+    const [selectedJid, setSelectedJid] = useState<string | null>(searchParams.get("leadId"));
+    
+    // Estados do Proxy (In-Memory Database)
+    const [chats, setChats] = useState<Record<string, ProxyChat>>({});
+    const [messagesByChat, setMessagesByChat] = useState<Record<string, ProxyMessage[]>>({});
+    const [contacts, setContacts] = useState<Record<string, ProxyContact>>({});
+
     const [searchQuery, setSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<string | null>(null);
     const [newMessage, setNewMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
     const [showLeadInfo, setShowLeadInfo] = useState(true);
-    const [presenceMap, setPresenceMap] = useState<Record<string, { status: string, timestamp: string }>>({});
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const queryClient = useQueryClient();
+    
+    // Status do Motor WhatsApp
+    const [waStatus, setWaStatus] = useState<string>("close");
+    const [waQr, setWaQr] = useState<string | null>(null);
+    const [isPaired, setIsPaired] = useState<boolean>(false);
+    const [isWaModalOpen, setIsWaModalOpen] = useState(false);
+    const [isDisconnecting, setIsDisconnecting] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(true);
+
     const scrollRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Sync selectedLeadId with search params
     useEffect(() => {
-        const urlLeadId = searchParams.get("leadId");
-        if (urlLeadId && urlLeadId !== selectedLeadId) {
-            setSelectedLeadId(urlLeadId);
+        let timeout: ReturnType<typeof setTimeout>;
+        if (waStatus === 'open') {
+            timeout = setTimeout(() => setIsSyncing(false), 8000);
+        } else {
+            setIsSyncing(true);
         }
-    }, [searchParams, selectedLeadId]);
+        return () => clearTimeout(timeout);
+    }, [waStatus]);
 
-    const commonEmojis = ["😊", "👍", "🤝", "🚀", "💡", "📅", "✅", "📍", "💰", "🙏", "📞", "👋"];
+    // ─── Conexão Socket.IO ──────────────────────────────────────────────────
+    useEffect(() => {
+        const socket = io(API_URL);
+        
+        // Cache local temporário para a sessão garantir o mapeamento
+        const localLidMap: Record<string, string> = {};
 
-    // Fetch leads that have history
-    const { data: chatLeads, isLoading: loadingLeads } = useQuery({
-        queryKey: ["chat-leads"],
-        queryFn: async () => {
-            // 1. Get all leads
-            const { data: leads, error: leadsError } = await supabase
-                .from("leads")
-                .select("*")
-                .order("name");
+        // 1. Atualizações de Conexão
+        socket.on('whatsapp-connection-update', ({ connection, qr, isPaired }) => {
+            setWaStatus(connection);
+            setWaQr(qr);
+            setIsPaired(!!isPaired);
 
-            if (leadsError) throw leadsError;
+            if (connection === 'close') {
+                // ESTRATÉGIA PROXY: Limpa TODOS os estados em memória ao desconectar!
+                // Assim as mensagens da conta anterior não vazam para a próxima.
+                setChats({});
+                setMessagesByChat({});
+                setContacts({});
+                setSelectedJid(null);
+                setIsSyncing(true);
+                // Limpar cache local do LID Map
+                for (const key in localLidMap) delete localLidMap[key];
+            }
+        });
 
-            // 2. Get latest message for each lead to show in sidebar
-            // This is a bit complex in Supabase without a specific view, 
-            // so we'll fetch recent history and map it.
-            const { data: history, error: historyError } = await supabase
-                .from("contact_history")
-                .select("company_id, message, data_envio, direction")
-                .order("data_envio", { ascending: false });
+        // 2. Histórico Inicial (Sincronização Web)
+        socket.on('whatsapp-history', ({ chats: rawChats, messages: rawMessages, contacts: rawContacts }) => {
+            // Processa Contatos e cria o Mapeamento LID -> JID
+            const contactsMap: Record<string, ProxyContact> = {};
+            if (rawContacts) {
+                rawContacts.forEach((c: any) => {
+                    const id = c.id;
+                    const name = c.name || c.notify || c.verifiedName || id.split('@')[0];
+                    contactsMap[id] = { id, name, pushName: c.notify };
+                    
+                    if (c.lid) {
+                        localLidMap[c.lid] = id;
+                        contactsMap[c.lid] = { id, name, pushName: c.notify };
+                    }
+                });
+            }
+            setContacts(prev => ({ ...prev, ...contactsMap }));
 
-            if (historyError) throw historyError;
+            // Processa Mensagens
+            const messagesMap: Record<string, ProxyMessage[]> = {};
+            if (rawMessages) {
+                rawMessages.forEach((msg: any) => {
+                    if (!msg.key || !msg.key.remoteJid) return;
+                    let jid = msg.key.remoteJid;
+                    jid = localLidMap[jid] || jid; // Resolve LID para JID se aplicável
 
-            // Map leads to lead with last message
-            const leadsWithHistory = leads.map(lead => {
-                const leadHistory = history.filter(h => h.company_id === lead.id);
-                if (leadHistory.length === 0) return null;
+                    const text = extractTextFromWhatsAppMessage(msg);
+                    if (!text) return;
+
+                    const proxyMsg: ProxyMessage = {
+                        id: msg.key.id,
+                        text: text,
+                        direction: msg.key.fromMe ? 'outbound' : 'inbound',
+                        timestamp: msg.messageTimestamp ? (typeof msg.messageTimestamp === 'object' ? Number(msg.messageTimestamp.low || 0) * 1000 : Number(msg.messageTimestamp) * 1000) : Date.now(),
+                        status: 'delivered',
+                        sender: msg.key.participant || jid
+                    };
+
+                    if (!messagesMap[jid]) messagesMap[jid] = [];
+                    messagesMap[jid].push(proxyMsg);
+                });
+                
+                // Ordena histórico
+                Object.keys(messagesMap).forEach(jid => {
+                    messagesMap[jid].sort((a,b) => a.timestamp - b.timestamp);
+                });
+            }
+            setMessagesByChat(prev => ({ ...prev, ...messagesMap }));
+
+            // Processa Chats
+            const chatsMap: Record<string, ProxyChat> = {};
+            if (rawChats) {
+                rawChats.forEach((chat: any) => {
+                    let jid = chat.id;
+                    jid = localLidMap[jid] || jid; // Resolve LID para JID se aplicável
+                    
+                    const type = jid.endsWith('@g.us') ? 'group' : jid.endsWith('@newsletter') ? 'community' : 'individual';
+                    const contactName = contactsMap[jid]?.name || chat.name || chat.verifiedName || jid.split('@')[0];
+                    
+                    const jidMsgs = messagesMap[jid];
+                    const lastMsgObj = jidMsgs && jidMsgs.length > 0 ? jidMsgs[jidMsgs.length - 1] : null;
+                    const lastText = lastMsgObj ? lastMsgObj.text : '';
+                    
+                    let lastMessageSender = '';
+                    if (type === 'group' && lastMsgObj && lastMsgObj.direction === 'inbound' && lastMsgObj.sender) {
+                        const senderContact = contactsMap[lastMsgObj.sender];
+                        lastMessageSender = senderContact?.pushName || senderContact?.name || lastMsgObj.sender.split('@')[0];
+                    }
+
+                    const lastTime = chat.conversationTimestamp ? 
+                        (typeof chat.conversationTimestamp === 'object' ? Number(chat.conversationTimestamp.low || 0) * 1000 : Number(chat.conversationTimestamp) * 1000) : 
+                        (lastMsgObj ? lastMsgObj.timestamp : 0);
+                    
+                    chatsMap[jid] = {
+                        id: jid,
+                        name: contactName,
+                        lastMessage: lastText,
+                        lastMessageSender: lastMessageSender,
+                        lastMessageTime: lastTime,
+                        pinned: chat.pinned ? Number(chat.pinned) : 0,
+                        unreadCount: chat.unreadCount || 0,
+                        type: type as any
+                    };
+                });
+            }
+            setChats(prev => ({ ...prev, ...chatsMap }));
+            
+            setIsSyncing(false); // Recebeu a carga, encerra o loading!
+        });
+
+        // 3. Atualização de Contatos Dinâmicos
+        socket.on('whatsapp-contacts-upsert', (newContacts: any[]) => {
+            const updates: Record<string, ProxyContact> = {};
+            newContacts.forEach(c => {
+                const id = c.id;
+                const name = c.name || c.notify;
+                updates[id] = { id, name, pushName: c.notify };
+                if (c.lid) {
+                    localLidMap[c.lid] = id;
+                    updates[c.lid] = { id, name, pushName: c.notify };
+                }
+            });
+            setContacts(prev => ({ ...prev, ...updates }));
+        });
+
+        // 4. Nova Mensagem em Tempo Real (Pass-through do Servidor)
+        socket.on('whatsapp-message', (msg: any) => {
+            if (!msg.key || !msg.key.remoteJid) return;
+            let jid = msg.key.remoteJid;
+            jid = localLidMap[jid] || jid; // Resolve LID para JID se aplicável
+            
+            const text = extractTextFromWhatsAppMessage(msg);
+            if (!text) return;
+
+            const isOutbound = msg.key.fromMe;
+            const timestamp = msg.messageTimestamp ? (typeof msg.messageTimestamp === 'object' ? Number(msg.messageTimestamp.low || 0) * 1000 : Number(msg.messageTimestamp) * 1000) : Date.now();
+            
+            const proxyMsg: ProxyMessage = {
+                id: msg.key.id,
+                text: text,
+                direction: isOutbound ? 'outbound' : 'inbound',
+                timestamp: timestamp,
+                status: 'delivered',
+                sender: msg.key.participant || jid
+            };
+
+            // Adiciona a mensagem à lista da conversa
+            setMessagesByChat(prev => {
+                const current = prev[jid] || [];
+                // Evita duplicatas se o ID já existir
+                if (current.find(m => m.id === proxyMsg.id)) return prev;
+                return { ...prev, [jid]: [...current, proxyMsg] };
+            });
+
+            // Promove o Chat para o topo e atualiza a última mensagem
+            setChats(prev => {
+                const existing = prev[jid];
+                const type = jid.endsWith('@g.us') ? 'group' : 'individual';
+                
+                let lastMessageSender = '';
+                if (type === 'group' && !isOutbound && (msg.key.participant || jid)) {
+                    const senderJid = msg.key.participant || jid;
+                    const senderContact = contacts[senderJid];
+                    lastMessageSender = senderContact?.pushName || senderContact?.name || senderJid.split('@')[0];
+                }
 
                 return {
-                    ...lead,
-                    last_message: leadHistory[0].message,
-                    last_message_time: leadHistory[0].data_envio,
-                };
-            }).filter(Boolean) as ChatLead[];
-
-            // Sort by last message time
-            return leadsWithHistory.sort((a, b) => {
-                return new Date(b.last_message_time || 0).getTime() - new Date(a.last_message_time || 0).getTime();
-            });
-        }
-    });
-
-    const selectedLead = useMemo(() =>
-        chatLeads?.find(l => l.id === selectedLeadId),
-        [chatLeads, selectedLeadId]
-    );
-
-    // Fetch messages for selected lead
-    const { data: messages, isLoading: loadingMessages } = useQuery({
-        queryKey: ["messages", selectedLeadId],
-        queryFn: async () => {
-            if (!selectedLeadId) return [];
-            const { data, error } = await supabase
-                .from("contact_history")
-                .select("*")
-                .eq("company_id", selectedLeadId)
-                .order("data_envio", { ascending: true });
-
-            if (error) throw error;
-            return data as Message[];
-        },
-        enabled: !!selectedLeadId,
-    });
-
-    // Realtime Presence Subscription
-    useEffect(() => {
-        const channel = supabase.channel('presence-global')
-            .on('broadcast', { event: 'presence-status' }, (payload) => {
-                const { phone, presence, timestamp } = payload.payload;
-                setPresenceMap(prev => ({
                     ...prev,
-                    [phone]: { status: presence, timestamp }
-                }));
+                    [jid]: {
+                        id: jid,
+                        name: existing?.name || msg.pushName || jid.split('@')[0],
+                        lastMessage: text,
+                        lastMessageSender: lastMessageSender || existing?.lastMessageSender,
+                        lastMessageTime: timestamp,
+                        pinned: existing?.pinned || 0,
+                        unreadCount: isOutbound ? 0 : ((existing?.unreadCount || 0) + 1),
+                        type: existing?.type || type as any
+                    }
+                };
+            });
+            
+            // Registra contato temporário se não existir (para pegar o PushName)
+            if (msg.pushName) {
+                setContacts(prev => {
+                    if (prev[jid]?.name) return prev;
+                    return { ...prev, [jid]: { id: jid, name: msg.pushName, pushName: msg.pushName } };
+                });
+            }
+        });
 
-                // Limpar status de "digitando" após 5 segundos se não houver novo update
-                if (presence === 'composing') {
-                    setTimeout(() => {
-                        setPresenceMap(prev => {
-                            if (prev[phone]?.status === 'composing') {
-                                return { ...prev, [phone]: { ...prev[phone], status: 'available' } };
-                            }
-                            return prev;
-                        });
-                    }, 5000);
-                }
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { socket.disconnect(); };
     }, []);
 
-    // Real-time subscription for messages
+    // Busca foto do perfil sob demanda (Lazy Loading)
     useEffect(() => {
-        const channel = supabase
-            .channel('schema-db-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'contact_history'
-                },
-                (payload) => {
-                    queryClient.invalidateQueries({ queryKey: ["chat-leads"] });
-                    if (selectedLeadId && (payload.new as any).company_id === selectedLeadId) {
-                        queryClient.invalidateQueries({ queryKey: ["messages", selectedLeadId] });
+        const fetchProfiles = async () => {
+            const neededJids = Object.keys(chats).filter(jid => !contacts[jid]?.imgUrl);
+            // Pegue apenas os primeiros visíveis ou de quem você clicou para não sobrecarregar
+            // Por simplicidade, faremos isso no on-click ou para todos
+            if (selectedJid && chats[selectedJid] && !contacts[selectedJid]?.imgUrl) {
+                try {
+                    const res = await fetch(`${API_URL}/api/chat/profile-pic/${selectedJid}`);
+                    if (res.ok) {
+                        const { url } = await res.json();
+                        setContacts(prev => ({
+                            ...prev,
+                            [selectedJid]: { ...prev[selectedJid], id: selectedJid, imgUrl: url }
+                        }));
                     }
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
+                } catch (e) {}
+            }
         };
-    }, [selectedLeadId, queryClient]);
+        fetchProfiles();
+    }, [selectedJid, chats]);
 
-    // Scroll to bottom when messages change
+    // ─── Efeitos de UI ────────────────────────────────────────────────────────
+
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
-    }, [messages]);
+    }, [messagesByChat, selectedJid]);
 
     const handleSendMessage = async () => {
-        if (!newMessage.trim() || !selectedLead || isSending) return;
+        if (!newMessage.trim() || !selectedJid || isSending || waStatus !== 'open') return;
 
         setIsSending(true);
         try {
@@ -238,17 +380,31 @@ export default function ChatPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    leadId: selectedLead.id,
-                    phone: selectedLead.phone,
+                    leadId: "proxy-bypass", // Ignorado no backend proxy
+                    phone: selectedJid,
                     message: newMessage.trim()
                 }),
             });
 
             if (!response.ok) throw new Error("Erro ao enviar mensagem");
 
+            // A mensagem será recebida via socket localmente também (echo) se fromMe estiver habilitado no baileys
             setNewMessage("");
-            queryClient.invalidateQueries({ queryKey: ["messages", selectedLead.id] });
-            queryClient.invalidateQueries({ queryKey: ["chat-leads"] });
+            
+            // Adicionamos otimisticamente caso o echo falhe
+            const proxyMsg: ProxyMessage = {
+                id: `opt_${Date.now()}`,
+                text: newMessage.trim(),
+                direction: 'outbound',
+                timestamp: Date.now(),
+                status: 'sent'
+            };
+            
+            setMessagesByChat(prev => ({
+                ...prev,
+                [selectedJid]: [...(prev[selectedJid] || []), proxyMsg]
+            }));
+
         } catch (error: any) {
             toast.error("Erro ao enviar", { description: error.message });
         } finally {
@@ -256,87 +412,87 @@ export default function ChatPage() {
         }
     };
 
-    const filteredLeads = useMemo(() => {
-        if (!chatLeads) return [];
-        return chatLeads.filter(l => {
-            const matchesSearch = l.name.toLowerCase().includes(searchQuery.toLowerCase()) || l.phone.includes(searchQuery);
-            const matchesStatus = !statusFilter || l.status === statusFilter;
-            return matchesSearch && matchesStatus;
-        });
-    }, [chatLeads, searchQuery, statusFilter]);
-
-    const handleEmojiClick = (emoji: string) => {
-        setNewMessage(prev => prev + emoji);
-    };
-
-    const handleFileClick = () => {
-        fileInputRef.current?.click();
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            toast.success(`Arquivo "${file.name}" selecionado!`, {
-                description: "O suporte para envio de anexos está sendo implementado no backend."
-            });
+    const handleDisconnect = async () => {
+        setIsDisconnecting(true);
+        try {
+            const response = await fetch(`${API_URL}/api/chat/disconnect`, { method: "POST" });
+            if (!response.ok) throw new Error("Erro ao desconectar");
+            toast.success("Sessão do WhatsApp encerrada e tela limpa!");
+        } catch (error: any) {
+            toast.error("Erro ao desconectar", { description: error.message });
+        } finally {
+            setIsDisconnecting(false);
         }
     };
 
-    const handleArchiveLead = (leadId: string) => {
-        toast.info("Lead arquivado com sucesso!", {
-            description: "Esta ação mudará o status do lead no banco de dados futuramente."
-        });
-    };
+    // ─── Renderização Baseada nos Estados Proxy ─────────────────────────────
 
-    const handleCall = (phone: string) => {
-        window.location.href = `tel:${phone.replace(/\D/g, "")}`;
-    };
+    // Ordenar Chats do mais recente para o mais antigo, com fixados no topo e filtrar inválidos
+    const sortedChats = useMemo(() => {
+        return Object.values(chats)
+            .filter(c => {
+                // Remove chats sem mensagens reais (time 0 e não fixado vazios)
+                if (!c.lastMessageTime && !c.pinned) return false;
+                
+                // Filtro de Busca Local em RAM
+                const contact = contacts[c.id];
+                const displayName = contact?.name || contact?.pushName || c.name || c.id;
+                return displayName.toLowerCase().includes(searchQuery.toLowerCase()) || c.id.includes(searchQuery);
+            })
+            .sort((a, b) => {
+                // Chats Fixados (Pinned) vem primeiro na ordem do Timestamp
+                const pinnedA = a.pinned || 0;
+                const pinnedB = b.pinned || 0;
+                
+                if (pinnedA > 0 || pinnedB > 0) {
+                    if (pinnedA !== pinnedB) return pinnedB - pinnedA;
+                }
+                
+                // Secundário: Ordena por última mensagem
+                return (b.lastMessageTime || 0) - (a.lastMessageTime || 0);
+            });
+    }, [chats, contacts, searchQuery]);
+
+    const selectedChat = selectedJid ? chats[selectedJid] : null;
+    const currentMessages = selectedJid ? (messagesByChat[selectedJid] || []) : [];
+    const currentContactInfo = selectedJid ? contacts[selectedJid] : null;
+    
+    // Nome do chat selecionado
+    const displaySelectedName = currentContactInfo?.name || currentContactInfo?.pushName || selectedChat?.name || selectedJid?.split('@')[0] || 'Desconhecido';
+
+    const commonEmojis = ["😊", "👍", "🤝", "🚀", "💡", "📅", "✅", "📍", "💰", "🙏", "📞", "👋"];
 
     return (
-        <div className={cn(
-            "flex overflow-hidden bg-card transition-all w-full flex-1 h-full"
-        )}>
-            {/* Sidebar - Conversation List */}
+        <div className={cn("flex overflow-hidden bg-card transition-all w-full flex-1 h-full")}>
+            
+            {/* Sidebar Esquerda - Lista de Conversas (Em RAM) */}
             <div className={cn(
                 "w-full md:w-[350px] lg:w-[400px] flex flex-col border-r border-border bg-muted/10 shrink-0",
-                selectedLeadId ? "hidden md:flex" : "flex"
+                selectedJid ? "hidden md:flex" : "flex"
             )}>
                 <div className="p-4 space-y-4 bg-background/50 backdrop-blur-sm border-b border-border/50">
                     <div className="flex items-center justify-between">
-                        <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Central de Chat</h1>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className={cn("rounded-full", statusFilter ? "text-primary bg-primary/10" : "text-muted-foreground")}>
-                                    <Filter className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuLabel>Filtrar por Status</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => setStatusFilter(null)}>
-                                    Todas as conversas
-                                    {!statusFilter && <CheckCheck className="h-3 w-3 ml-auto text-primary" />}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setStatusFilter("new")}>
-                                    Novos Leads
-                                    {statusFilter === "new" && <CheckCheck className="h-3 w-3 ml-auto text-primary" />}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setStatusFilter("contacted")}>
-                                    Contatados
-                                    {statusFilter === "contacted" && <CheckCheck className="h-3 w-3 ml-auto text-primary" />}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setStatusFilter("replied")}>
-                                    Respondidos
-                                    {statusFilter === "replied" && <CheckCheck className="h-3 w-3 ml-auto text-primary" />}
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent flex items-center gap-2">
+                            <MessageSquare className="w-5 h-5 text-emerald-500" />
+                            Conversas 
+                        </h1>
+                        <div className="flex items-center gap-1">
+                            {/* Gatilho do QR Code */}
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className={cn("rounded-full", waStatus !== 'open' ? "text-amber-500 bg-amber-500/10 animate-pulse" : "text-emerald-500 bg-emerald-500/10")}
+                                onClick={() => setIsWaModalOpen(true)}
+                            >
+                                <QrCode className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
-                            placeholder="Buscar conversas..."
-                            className="pl-10 bg-background/50 border-border/50 focus:ring-primary/20 rounded-xl"
+                            placeholder="Buscar contatos ou números..."
+                            className="pl-10 bg-background/50 border-border/50 focus:ring-emerald-500/20 rounded-xl"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -345,324 +501,167 @@ export default function ChatPage() {
 
                 <ScrollArea className="flex-1">
                     <div className="divide-y divide-border/30">
-                        {loadingLeads ? (
-                            <div className="flex items-center justify-center p-8">
-                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        {waStatus !== 'open' ? (
+                            <div className="p-8 text-center space-y-4">
+                                <p className="text-sm text-muted-foreground">Conecte seu WhatsApp para carregar suas conversas do celular.</p>
+                                <Button variant="outline" onClick={() => setIsWaModalOpen(true)}>Vincular Agora</Button>
                             </div>
-                        ) : filteredLeads.length === 0 ? (
+                        ) : sortedChats.length === 0 && isSyncing ? (
+                            <div className="p-8 text-center space-y-4">
+                                <Loader2 className="h-10 w-10 mx-auto animate-spin text-emerald-500/50" />
+                                <p className="text-sm font-semibold text-emerald-600/80">Obtendo banco de mensagens...</p>
+                                <p className="text-xs text-muted-foreground mx-auto">Isso leva apenas alguns instantes.</p>
+                            </div>
+                        ) : sortedChats.length === 0 && !isSyncing ? (
                             <div className="p-8 text-center space-y-2">
-                                <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground/20" />
-                                <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
+                                <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground/30" />
+                                <p className="text-xs text-muted-foreground">Nenhuma conversa encontrada recentemente.</p>
                             </div>
                         ) : (
-                            filteredLeads.map((lead) => (
-                                <div
-                                    key={lead.id}
-                                    onClick={() => setSelectedLeadId(lead.id)}
-                                    className={cn(
-                                        "p-4 flex gap-4 cursor-pointer transition-all hover:bg-primary/5 relative group",
-                                        selectedLeadId === lead.id ? "bg-primary/10" : ""
-                                    )}
-                                >
-                                    {selectedLeadId === lead.id && (
-                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-                                    )}
-
-                                    <div className="relative">
-                                        <Avatar className="h-12 w-12 border border-border/50 shadow-sm">
-                                            <AvatarImage src={lead.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(lead.name)}&background=random&color=fff`} />
-                                            <AvatarFallback className="bg-primary/5 text-primary font-bold">
-                                                {lead.name.substring(0, 2).toUpperCase()}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        {(lead.phone && (presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'available' || presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'composing')) && (
-                                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-background" />
+                            sortedChats.map((chat) => {
+                                const contact = contacts[chat.id];
+                                const displayName = contact?.name || contact?.pushName || chat.name || chat.id.split('@')[0];
+                                
+                                return (
+                                    <div
+                                        key={chat.id}
+                                        onClick={() => setSelectedJid(chat.id)}
+                                        className={cn(
+                                            "p-4 flex gap-4 cursor-pointer transition-all hover:bg-emerald-500/5 relative group",
+                                            selectedJid === chat.id ? "bg-emerald-500/10" : ""
                                         )}
-                                    </div>
+                                    >
+                                        {selectedJid === chat.id && (
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
+                                        )}
 
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-0.5">
-                                            <h3 className="font-semibold text-sm truncate">{lead.name}</h3>
-                                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                                {lead.last_message_time ? format(new Date(lead.last_message_time), "HH:mm", { locale: ptBR }) : ""}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-primary/20 bg-primary/5 text-primary">
-                                                {lead.segment?.split(' ')[0] || "Nicho"}
-                                            </Badge>
-                                            <ScoreBadge score={lead.score} className="scale-75 origin-left" />
-                                        </div>
-
-                                        <p className="text-xs text-muted-foreground truncate line-clamp-1">
-                                            {lead.phone && presenceMap[lead.phone.replace(/\D/g, '')]?.status === 'composing' ? (
-                                                <span className="text-emerald-500 font-medium animate-pulse">Digitando...</span>
-                                            ) : (
-                                                lead.last_message || "Iniciar conversa..."
+                                        <div className="relative">
+                                            <Avatar className="h-12 w-12 border border-border/50 shadow-sm">
+                                                <AvatarImage src={contact?.imgUrl} />
+                                                <AvatarFallback className="bg-emerald-500/10 text-emerald-600 font-bold">
+                                                    {chat.type === 'group' ? <Users className="h-5 w-5" /> : displayName.substring(0, 2).toUpperCase()}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            {chat.unreadCount > 0 && (
+                                                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white border-2 border-background">
+                                                    {chat.unreadCount}
+                                                </span>
                                             )}
-                                        </p>
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <h3 className="font-semibold text-sm truncate">{displayName}</h3>
+                                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                                    {chat.lastMessageTime ? format(new Date(chat.lastMessageTime), "HH:mm") : ""}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Badge variant="outline" className={cn("text-[8px] px-1 py-0 h-4 uppercase tracking-widest", 
+                                                    chat.type === 'group' ? "border-indigo-500/30 text-indigo-500" :
+                                                    chat.type === 'community' ? "border-amber-500/30 text-amber-500" :
+                                                    "border-muted")}>
+                                                    {chat.type === 'group' ? 'Grupo' : chat.type === 'community' ? 'Comunidade' : 'Contato'}
+                                                </Badge>
+                                            </div>
+
+                                            <p className="text-xs text-muted-foreground truncate line-clamp-1">
+                                                {chat.lastMessage || "Toque para ver..."}
+                                            </p>
+                                        </div>
                                     </div>
-                                </div>
-                            ))
+                                )
+                            })
                         )}
                     </div>
                 </ScrollArea>
             </div>
 
-            {/* Main Chat Area */}
+            {/* Painel Central - Área de Chat */}
             <div className={cn(
                 "flex-1 flex flex-col min-w-0 bg-background relative chat-pattern",
-                !selectedLeadId ? "hidden md:flex" : "flex"
+                !selectedJid ? "hidden md:flex" : "flex"
             )}>
-                {/* Chat Background Pattern */}
-                <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat" />
+                <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://whatsapp.com/favicon.ico')] bg-repeat opacity-5" />
 
-                {selectedLead ? (
+                {selectedJid ? (
                     <>
                         {/* Chat Header */}
-                        <header className="px-4 md:px-6 py-3 flex items-center justify-between bg-background/80 backdrop-blur-md border-b border-border/50 z-10 shrink-0">
+                        <header className="px-4 md:px-6 py-3 flex items-center justify-between bg-muted/30 backdrop-blur-md border-b border-border/50 z-10 shrink-0">
                             <div className="flex items-center gap-2 md:gap-4 overflow-hidden">
                                 <Button
                                     variant="ghost"
                                     size="icon"
                                     className="md:hidden -ml-2 rounded-full h-8 w-8"
-                                    onClick={() => setSelectedLeadId(null)}
+                                    onClick={() => setSelectedJid(null)}
                                 >
                                     <ChevronLeft className="h-5 w-5" />
                                 </Button>
-                                <Avatar className="h-9 w-9 md:h-10 md:w-10 border border-primary/10 shrink-0">
-                                    <AvatarImage src={selectedLead.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedLead.name)}&background=random&color=fff`} />
-                                    <AvatarFallback className="bg-primary/5 text-primary font-bold">{selectedLead.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                <Avatar className="h-9 w-9 md:h-10 md:w-10 border border-border shrink-0">
+                                    <AvatarImage src={currentContactInfo?.imgUrl} />
+                                    <AvatarFallback className="bg-emerald-500/10 text-emerald-600 font-bold">
+                                        {selectedChat?.type === 'group' ? <Users className="h-4 w-4" /> : displaySelectedName.substring(0, 2).toUpperCase()}
+                                    </AvatarFallback>
                                 </Avatar>
                                 <div>
-                                    <h2 className="font-bold text-sm leading-tight">{selectedLead.name}</h2>
+                                    <h2 className="font-bold text-sm leading-tight">{displaySelectedName}</h2>
                                     <div className="flex items-center gap-2">
-                                        {selectedLead.phone && presenceMap[selectedLead.phone.replace(/\D/g, '')]?.status === 'composing' ? (
-                                            <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium lowercase">
-                                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" />
-                                                Digitando...
-                                            </span>
-                                        ) : selectedLead.phone && presenceMap[selectedLead.phone.replace(/\D/g, '')]?.status === 'available' ? (
-                                            <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium lowercase">
-                                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                                                Online agora
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium lowercase">
-                                                Offline
-                                            </span>
-                                        )}
-                                        <span className="text-[10px] text-muted-foreground">•</span>
-                                        <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-tight">{selectedLead.segment}</span>
+                                        <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium">
+                                            {selectedJid.split('@')[0]}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-1 md:gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="rounded-full text-muted-foreground hover:bg-primary/5 hover:text-primary h-9 w-9 md:h-10 md:w-10"
-                                    onClick={() => handleCall(selectedLead.phone)}
-                                >
-                                    <Phone className="h-4 w-4" />
-                                </Button>
-
-                                {/* Info Button - Sheet on Mobile, Toggle on Desktop */}
-                                <div className="lg:hidden">
-                                    <Sheet>
-                                        <SheetTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:bg-primary/5 hover:text-primary h-9 w-9">
-                                                <Info className="h-4 w-4" />
-                                            </Button>
-                                        </SheetTrigger>
-                                        <SheetContent side="right" className="w-[85%] sm:w-[400px] p-0 border-l-border">
-                                            <div className="h-full flex flex-col">
-                                                {/* Reusing lead details content here */}
-                                                <div className="p-6 text-center border-b border-border/50 bg-muted/5">
-                                                    <Avatar className="h-24 w-24 mx-auto mb-4 border-4 border-background shadow-xl">
-                                                        <AvatarImage src={selectedLead.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedLead.name)}&background=random&color=fff`} />
-                                                        <AvatarFallback className="text-2xl font-bold bg-primary/5 text-primary">
-                                                            {selectedLead.name.substring(0, 2).toUpperCase()}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    <h2 className="font-bold text-lg mb-1">{selectedLead.name}</h2>
-                                                    <div className="flex items-center justify-center gap-2">
-                                                        <StatusBadge status={selectedLead.status as any} />
-                                                        <ScoreBadge score={selectedLead.score} />
-                                                    </div>
-                                                </div>
-                                                <ScrollArea className="flex-1 p-6">
-                                                    <div className="space-y-6">
-                                                        <div className="space-y-3">
-                                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">Atalhos de Contato</h4>
-                                                            <div className="grid grid-cols-2 gap-2">
-                                                                <Button variant="outline" size="sm" className="h-10 gap-2 rounded-xl border-border/50 hover:bg-primary/5 w-full" asChild>
-                                                                    <a href={`tel:${selectedLead.phone}`}>
-                                                                        <Phone className="h-3.5 w-3.5 text-primary" />
-                                                                        Ligar
-                                                                    </a>
-                                                                </Button>
-                                                                <Button variant="outline" size="sm" className="h-10 gap-2 rounded-xl border-border/50 hover:bg-primary/5 w-full" asChild>
-                                                                    <a href={`https://wa.me/${selectedLead.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">
-                                                                        <MessageSquare className="h-3.5 w-3.5 text-emerald-500" />
-                                                                        Whats
-                                                                    </a>
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="space-y-3">
-                                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">Informações do Lead</h4>
-                                                            <div className="space-y-3">
-                                                                <div className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border/50">
-                                                                    <div className="mt-0.5 p-1.5 rounded-lg bg-primary/10 text-primary">
-                                                                        <MapPin className="h-3.5 w-3.5" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">Localização</p>
-                                                                        <p className="text-xs font-bold">{selectedLead.city}, {selectedLead.state}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border/50">
-                                                                    <div className="mt-0.5 p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
-                                                                        <Globe className="h-3.5 w-3.5" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">Segmento</p>
-                                                                        <p className="text-xs font-bold">{selectedLead.segment}</p>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 to-primary/20 border border-primary/10 space-y-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide">Dica de Atendimento</p>
-                                                            <p className="text-xs leading-relaxed text-foreground/80">
-                                                                Foco na proposta de valor rápida para converter este lead do segmento <strong>{selectedLead.segment}</strong> agora.
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </ScrollArea>
-                                            </div>
-                                        </SheetContent>
-                                    </Sheet>
-                                </div>
-
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="hidden md:flex rounded-full text-muted-foreground hover:bg-primary/5 hover:text-primary"
-                                    onClick={() => toast.info("Chamada de vídeo", { description: "Em breve: Integração nativa de vídeo ou link direto para Meet." })}
-                                >
-                                    <Video className="h-4 w-4" />
-                                </Button>
-
-                                <div className="hidden lg:flex items-center gap-1">
-                                    <Separator orientation="vertical" className="h-6 mx-1" />
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className={cn("rounded-full transition-colors", showLeadInfo ? "text-primary bg-primary/10" : "text-muted-foreground")}
-                                        onClick={() => setShowLeadInfo(!showLeadInfo)}
-                                    >
-                                        <Info className="h-4 w-4" />
-                                    </Button>
-                                </div>
-
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground h-9 w-9 md:h-10 md:w-10">
-                                            <MoreVertical className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-56">
-                                        <DropdownMenuLabel>Ações do Lead</DropdownMenuLabel>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem onClick={() => window.open(`https://wa.me/${selectedLead.phone.replace(/\D/g, '')}`, '_blank')}>
-                                            <ExternalLink className="h-4 w-4 mr-2" /> Abrir no WhatsApp Web
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handleArchiveLead(selectedLead.id)}>
-                                            <Archive className="h-4 w-4 mr-2" /> Arquivar Conversa
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem className="text-destructive focus:text-destructive">
-                                            <Trash className="h-4 w-4 mr-2" /> Bloquear/Excluir
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </div>
                         </header>
 
-                        {/* Messages */}
-                        <div className="flex-1 overflow-hidden flex flex-col">
-                            <ScrollArea className="flex-1 px-6 py-6" ref={scrollRef}>
-                                <div className="flex flex-col gap-4 max-w-4xl mx-auto">
-                                    {loadingMessages ? (
-                                        <div className="flex flex-col items-center justify-center p-12 space-y-4">
-                                            <Loader2 className="h-8 w-8 animate-spin text-primary/40" />
-                                            <p className="text-sm text-muted-foreground">Sincronizando histórico...</p>
-                                        </div>
-                                    ) : messages?.length === 0 ? (
+                        {/* Messages List em RAM */}
+                        <div className="flex-1 overflow-hidden flex flex-col pt-4">
+                            <ScrollArea className="flex-1 px-4 md:px-6 pb-6" ref={scrollRef}>
+                                <div className="flex flex-col gap-2 max-w-4xl mx-auto">
+                                    {currentMessages.length === 0 ? (
                                         <div className="text-center p-12 space-y-4">
-                                            <div className="w-16 h-16 bg-primary/5 rounded-full flex items-center justify-center mx-auto">
-                                                <MessageSquare className="h-8 w-8 text-primary/40" />
+                                            <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto">
+                                                <MessageSquare className="h-8 w-8 text-emerald-500/60" />
                                             </div>
                                             <div className="space-y-1">
-                                                <h3 className="font-semibold">Inicie uma conversa</h3>
-                                                <p className="text-xs text-muted-foreground">O lead já foi qualificado. Envie a primeira mensagem personalizada.</p>
+                                                <h3 className="font-semibold">Chat Protegido (Proxy Mode)</h3>
+                                                <p className="text-xs text-muted-foreground">O histórico detalhado deste contato está carregando em memória ou precisa de novas mensagens.</p>
                                             </div>
                                         </div>
                                     ) : (
-                                        messages?.map((msg, idx) => {
-                                            const isOutbound = msg.direction !== 'inbound';
-                                            const showDate = idx === 0 || format(new Date(messages[idx - 1].data_envio), 'yyyy-MM-dd') !== format(new Date(msg.data_envio), 'yyyy-MM-dd');
+                                        currentMessages.map((msg, idx) => {
+                                            const isOutbound = msg.direction === 'outbound';
+                                            const showDate = idx === 0 || format(new Date(currentMessages[idx - 1].timestamp), 'yyyy-MM-dd') !== format(new Date(msg.timestamp), 'yyyy-MM-dd');
 
                                             return (
-                                                <div key={msg.id} className="w-full">
+                                                <div key={msg.id} className="w-full flex flex-col">
                                                     {showDate && (
-                                                        <div className="flex justify-center my-6">
-                                                            <span className="px-3 py-1 rounded-full bg-muted/50 text-[10px] font-bold text-muted-foreground uppercase tracking-widest border border-border/50">
-                                                                {format(new Date(msg.data_envio), "EEEE, d 'de' MMMM", { locale: ptBR })}
+                                                        <div className="flex justify-center my-4">
+                                                            <span className="px-3 py-1 rounded-full bg-border/40 text-[10px] font-bold text-muted-foreground uppercase tracking-widest shadow-sm">
+                                                                {format(new Date(msg.timestamp), "d 'de' MMMM", { locale: ptBR })}
                                                             </span>
                                                         </div>
                                                     )}
 
                                                     <div className={cn("flex w-full", isOutbound ? "justify-end" : "justify-start")}>
                                                         <div className={cn(
-                                                            "relative max-w-[85%] md:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm text-sm group transition-transform active:scale-[0.98]",
+                                                            "relative max-w-[85%] md:max-w-[70%] px-3 py-2 rounded-[14px] text-sm group",
                                                             isOutbound
-                                                                ? "bg-primary text-primary-foreground rounded-tr-none shadow-primary/20"
-                                                                : "bg-muted/80 backdrop-blur-sm text-foreground rounded-tl-none border border-border/50"
+                                                                ? "bg-[#005c4b] text-white rounded-tr-sm shadow-sm"
+                                                                : "bg-[#202c33] text-white rounded-tl-sm shadow-sm"
                                                         )}>
-                                                            {/* Bubble Tail */}
-                                                            <svg
-                                                                className={cn(
-                                                                    "absolute top-0 h-4 w-4",
-                                                                    isOutbound ? "-right-2 text-primary" : "-left-2 text-muted/80"
-                                                                )}
-                                                                viewBox="0 0 16 16"
-                                                                fill="currentColor"
-                                                            >
-                                                                {isOutbound ? (
-                                                                    <path d="M0 0 L16 0 L8 16 Z" />
-                                                                ) : (
-                                                                    <path d="M16 0 L0 0 L8 16 Z" />
-                                                                )}
-                                                            </svg>
-
-                                                            <p className="leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                                                            <p className="leading-relaxed whitespace-pre-wrap pr-12">{msg.text}</p>
 
                                                             <div className={cn(
-                                                                "flex items-center gap-1.5 justify-end mt-1.5 opacity-60",
-                                                                isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"
+                                                                "absolute bottom-1 right-2 flex items-center gap-1 opacity-70",
+                                                                isOutbound ? "text-white" : "text-white/70"
                                                             )}>
-                                                                <span className="text-[9px] font-medium">
-                                                                    {format(new Date(msg.data_envio), "HH:mm")}
+                                                                <span className="text-[9px] font-medium leading-none mt-1">
+                                                                    {format(new Date(msg.timestamp), "HH:mm")}
                                                                 </span>
                                                                 {isOutbound && (
-                                                                    <CheckCheck className="h-3.5 w-3.5" />
+                                                                    <CheckCheck className="h-[14px] w-[14px]" />
                                                                 )}
                                                             </div>
                                                         </div>
@@ -675,60 +674,20 @@ export default function ChatPage() {
                             </ScrollArea>
                         </div>
 
-                        <footer className="p-4 bg-background/80 backdrop-blur-md border-t border-border/50 z-10 shrink-0">
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                className="hidden"
-                                onChange={handleFileChange}
-                                accept="image/*,.pdf,.doc,.docx"
-                            />
-                            <div className="max-w-4xl mx-auto flex items-center gap-3 px-2">
-                                <div className="flex items-center gap-1 text-muted-foreground">
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/5 hover:text-primary">
-                                                <Smile className="h-5 w-5" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent side="top" className="w-64 p-2 bg-background border-border/50 shadow-xl">
-                                            <div className="grid grid-cols-6 gap-1">
-                                                {commonEmojis.map(emoji => (
-                                                    <button
-                                                        key={emoji}
-                                                        onClick={() => handleEmojiClick(emoji)}
-                                                        className="h-9 w-9 flex items-center justify-center hover:bg-primary/10 rounded-lg transition-colors text-xl"
-                                                    >
-                                                        {emoji}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/5 hover:text-primary">
-                                                <Paperclip className="h-5 w-5" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent side="top" align="start" className="w-48">
-                                            <DropdownMenuItem onClick={handleFileClick}>
-                                                <ImageIcon className="h-4 w-4 mr-2" /> Imagem ou Vídeo
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={handleFileClick}>
-                                                <FileText className="h-4 w-4 mr-2" /> Documento (PDF)
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem disabled>
-                                                <Volume2 className="h-4 w-4 mr-2" /> Áudio (Em breve)
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
+                        {/* Message Input Box */}
+                        <footer className="p-3 md:p-4 bg-muted/40 backdrop-blur-md border-t border-border/50 z-10 shrink-0">
+                            <div className="max-w-4xl mx-auto flex items-center gap-2 px-1">
+                                <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:bg-border/50">
+                                    <Smile className="h-5 w-5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:bg-border/50">
+                                    <Paperclip className="h-5 w-5" />
+                                </Button>
 
                                 <div className="flex-1 relative">
                                     <textarea
-                                        placeholder="Digite sua mensagem aqui..."
-                                        className="w-full bg-muted/40 border-none focus-visible:ring-1 focus-visible:ring-primary/20 rounded-2xl px-4 py-3 text-sm min-h-[44px] max-h-32 resize-none custom-scrollbar transition-all flex items-center"
+                                        placeholder="Digite uma mensagem..."
+                                        className="w-full bg-background border border-border/60 focus-visible:ring-1 focus-visible:ring-emerald-500/50 rounded-2xl px-4 py-[10px] text-sm min-h-[44px] max-h-32 resize-none transition-all flex items-center shadow-sm"
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
                                         onKeyDown={(e) => {
@@ -743,122 +702,77 @@ export default function ChatPage() {
 
                                 <Button
                                     className={cn(
-                                        "rounded-full h-11 w-11 p-0 shadow-lg shadow-primary/20 transition-all shrink-0 flex items-center justify-center",
-                                        !newMessage.trim() || isSending ? "opacity-50" : "hover:scale-110 active:scale-95"
+                                        "rounded-full h-11 w-11 p-0 bg-emerald-600 hover:bg-emerald-700 text-white transition-all shrink-0 flex items-center justify-center",
+                                        !newMessage.trim() || isSending ? "opacity-50" : "hover:scale-105 active:scale-95"
                                     )}
-                                    disabled={!newMessage.trim() || isSending}
+                                    disabled={!newMessage.trim() || isSending || waStatus !== 'open'}
                                     onClick={handleSendMessage}
                                 >
-                                    {isSending ? (
-                                        <Loader2 className="h-5 w-5 animate-spin" />
-                                    ) : (
-                                        <Send className="h-5 w-5" />
-                                    )}
+                                    {isSending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-[18px] w-[18px] ml-1" />}
                                 </Button>
                             </div>
                         </footer>
                     </>
                 ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-fade-in">
-                        <div className="w-24 h-24 bg-primary/5 rounded-full flex items-center justify-center relative">
-                            <div className="absolute inset-0 border-2 border-primary/20 border-dashed rounded-full animate-spin-slow" />
-                            <MessageSquare className="h-10 w-10 text-primary animate-pulse" />
-                        </div>
-                        <div className="text-center space-y-2 max-w-sm">
-                            <h2 className="text-2xl font-bold">Inicie sua Prospecção</h2>
-                            <p className="text-muted-foreground text-sm">Selecione uma conversa ao lado para visualizar o histórico de mensagens e continuar o atendimento.</p>
+                    <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-fade-in bg-muted/10">
+                        <div className="w-48 h-48 mx-auto flex flex-col items-center justify-center opacity-80 gap-6">
+                            <img src="https://cdn-icons-png.flaticon.com/512/3670/3670051.png" alt="WhatsApp Web Logo" className="w-24 h-24 filter drop-shadow-lg opacity-70 saturate-0" />
+                            <div className="text-center space-y-2">
+                                <h2 className="text-xl font-light text-muted-foreground">WhatsApp Proxy</h2>
+                                <p className="text-muted-foreground/60 text-xs px-8">Suas mensagens agora são renderizadas diretamente do aparelho, sem guardar no banco de dados.</p>
+                            </div>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Right Sidebar - Lead Details */}
-            {selectedLead && showLeadInfo && (
-                <div className="hidden lg:flex w-[320px] flex-col border-l border-border bg-muted/5 animate-in slide-in-from-right duration-300">
-                    <header className="p-6 text-center">
-                        <Avatar className="h-24 w-24 mx-auto mb-4 border-4 border-background shadow-xl scale-110">
-                            <AvatarImage src={selectedLead.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedLead.name)}&background=random&color=fff`} />
-                            <AvatarFallback className="text-2xl font-bold bg-primary/5 text-primary">
-                                {selectedLead.name.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                        </Avatar>
-                        <h2 className="font-bold text-lg mb-1">{selectedLead.name}</h2>
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                            <StatusBadge status={selectedLead.status as any} />
-                            <ScoreBadge score={selectedLead.score} />
-                        </div>
-                    </header>
-
-                    <ScrollArea className="flex-1 px-6 pb-6">
-                        <div className="space-y-6">
-                            <div className="space-y-3">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">Atalhos de Contato</h4>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <Button variant="outline" size="sm" className="h-10 gap-2 rounded-xl border-border/50 hover:bg-primary/5" asChild>
-                                        <a href={`tel:${selectedLead.phone}`}>
-                                            <Phone className="h-3.5 w-3.5 text-primary" />
-                                            Ligar
-                                        </a>
-                                    </Button>
-                                    <Button variant="outline" size="sm" className="h-10 gap-2 rounded-xl border-border/50 hover:bg-primary/5" asChild>
-                                        <a href={`https://wa.me/${selectedLead.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">
-                                            <MessageSquare className="h-3.5 w-3.5 text-emerald-500" />
-                                            Whats
-                                        </a>
+            {/* Modal de Conexão (Inalterado/Minimalista) */}
+            <Dialog open={isWaModalOpen} onOpenChange={setIsWaModalOpen}>
+                <DialogContent className="sm:max-w-md border-border/50 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-center font-black text-2xl tracking-tight">Vincular dispositivo</DialogTitle>
+                        <DialogDescription className="text-center text-muted-foreground">
+                            Escaneie o QR Code abaixo para exibir suas conversas na memória. Nenhuma mensagem será salva.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center justify-center py-6 space-y-6">
+                        {waStatus === 'open' ? (
+                            <div className="w-full space-y-6 animate-in fade-in">
+                                <div className="w-48 h-48 mx-auto flex items-center justify-center bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                                    <CheckCheck className="w-16 h-16 text-emerald-500" />
+                                </div>
+                                <div className="text-center">
+                                    <Badge className="bg-emerald-500/10 text-emerald-600 mb-4 border-emerald-500/20">Sincronizado com sucesso</Badge>
+                                    <Button 
+                                        variant="destructive" 
+                                        className="w-full font-bold gap-2"
+                                        onClick={handleDisconnect}
+                                        disabled={isDisconnecting}
+                                    >
+                                        {isDisconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                                        Sair e Desconectar
                                     </Button>
                                 </div>
                             </div>
-
-                            <div className="space-y-4">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">Informações do Lead</h4>
-
-                                <div className="space-y-3">
-                                    <div className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border/50">
-                                        <div className="mt-0.5 p-1.5 rounded-lg bg-primary/10 text-primary">
-                                            <MapPin className="h-3.5 w-3.5" />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] text-muted-foreground uppercase font-semibold">Localização</p>
-                                            <p className="text-xs font-bold">{selectedLead.city}, {selectedLead.state}</p>
-                                        </div>
+                        ) : (
+                            <div className="w-full space-y-6">
+                                {waQr ? (
+                                    <div className="p-4 bg-white rounded-2xl mx-auto w-fit">
+                                        <img src={waQr} alt="QR Code" className="w-56 h-56" />
                                     </div>
-
-                                    <div className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border/50">
-                                        <div className="mt-0.5 p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
-                                            <Globe className="h-3.5 w-3.5" />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] text-muted-foreground uppercase font-semibold">Segmento</p>
-                                            <p className="text-xs font-bold">{selectedLead.segment}</p>
-                                        </div>
+                                ) : (
+                                    <div className="w-56 h-56 mx-auto flex items-center justify-center bg-muted rounded-2xl">
+                                        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                                     </div>
-
-                                    <div className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border/50">
-                                        <div className="mt-0.5 p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500">
-                                            <Star className="h-3.5 w-3.5" />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] text-muted-foreground uppercase font-semibold">Qualificação</p>
-                                            <p className="text-xs font-bold">{selectedLead.score >= 60 ? "Hot Lead" : "Lead em Aquecimento"}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 to-primary/20 border border-primary/10 space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 bg-primary rounded-full" />
-                                    <p className="text-[10px] font-bold uppercase tracking-wide">Dica de Atendimento</p>
-                                </div>
-                                <p className="text-xs leading-relaxed text-foreground/80">
-                                    Este lead demonstrou interesse em <strong>{selectedLead.segment}</strong>.
-                                    Foco na proposta de valor rápida para converter agora.
+                                )}
+                                <p className="text-center text-xs font-bold uppercase tracking-widest text-muted-foreground animate-pulse">
+                                    {waStatus === 'connecting' ? 'Iniciando Bridge' : 'Aguardando Leitura'}
                                 </p>
                             </div>
-                        </div>
-                    </ScrollArea>
-                </div>
-            )}
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

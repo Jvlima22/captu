@@ -89,7 +89,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "http://IP_DA_SUA_API:8080/message/sendText/CaptuComercial",
+                "url": "https://evolution.tglsolutions.com.br/message/sendText/CaptuComercial",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
