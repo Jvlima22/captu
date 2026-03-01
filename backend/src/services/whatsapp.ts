@@ -1,5 +1,4 @@
-import {
-    default as makeWASocket,
+import makeWASocket, {
     DisconnectReason,
     fetchLatestBaileysVersion,
     makeCacheableSignalKeyStore,
@@ -13,6 +12,7 @@ import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
+import fs from 'fs';
 
 const logger = pino({ level: 'info' });
 
@@ -34,7 +34,6 @@ export class WhatsAppService {
 
     private constructor() {
         try {
-            const fs = require('fs');
             if (fs.existsSync('./whatsapp_proxy_cache.json')) {
                 const data = fs.readFileSync('./whatsapp_proxy_cache.json', 'utf8');
                 this.historyCache = JSON.parse(data);
@@ -43,11 +42,15 @@ export class WhatsAppService {
         } catch (e) {
             console.log('[WhatsApp Proxy] Cache de disco não encontrado, começando limpo.');
         }
+        this.startCacheInterval();
+    }
 
+    public startCacheInterval() {
+        if (this.cacheInterval) return;
         this.cacheInterval = setInterval(() => {
             if (this.historyCache.chats.length > 0) {
                 try {
-                    require('fs').writeFileSync('./whatsapp_proxy_cache.json', JSON.stringify(this.historyCache));
+                    fs.writeFileSync('./whatsapp_proxy_cache.json', JSON.stringify(this.historyCache));
                 } catch (e) {}
             }
         }, 15000);
@@ -241,7 +244,7 @@ export class WhatsAppService {
                     if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                         await clearSession();
                         this.historyCache = { chats: [], messages: [], contacts: [] };
-                        try { require('fs').unlinkSync('./whatsapp_proxy_cache.json'); } catch(e){}
+                        try { fs.unlinkSync('./whatsapp_proxy_cache.json'); } catch(e){}
                         setTimeout(() => this.initialize(), 1000);
                     } else {
                         setTimeout(() => this.initialize(), 5000);
@@ -366,7 +369,7 @@ export class WhatsAppService {
             
             // Limpa o cache
             this.historyCache = { chats: [], messages: [], contacts: [] };
-            try { require('fs').unlinkSync('./whatsapp_proxy_cache.json'); } catch(e){}
+            try { fs.unlinkSync('./whatsapp_proxy_cache.json'); } catch(e){}
             
             if (this.io) {
                 this.io.emit('whatsapp-connection-update', { 

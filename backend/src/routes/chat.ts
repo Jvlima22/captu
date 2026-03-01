@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { WhatsAppService } from '../services/whatsapp';
+import { WhatsAppService } from '../services/whatsapp.js';
 
 const router = Router();
 const whatsapp = WhatsAppService.getInstance();

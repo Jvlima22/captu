@@ -12,32 +12,27 @@
  * Isso funciona porque no CommonJS o require() é síncrono e respeitado na ordem.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const dotenv = require('dotenv');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const path = require('path');
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 if (!process.env.VERCEL) {
-    // __dirname aponta para backend/src quando rodando via ts-node-dev
-    // ou backend/dist/src após tsc. De ambos os casos, ../../ chega à raiz.
     const envPath = path.resolve(__dirname, '../../.env');
-    const result = dotenv.config({ path: envPath });
-    if (result.error) {
-        console.warn(`[dotenv] Não foi possível carregar .env em: ${envPath}`);
-        console.warn('[dotenv] Rodando sem variáveis de ambiente locais.');
-    } else {
-        console.log(`[dotenv] ✅ Variáveis carregadas de: ${envPath}`);
-    }
+    dotenv.config({ path: envPath });
 }
 
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import leadRoutes from './routes/leads';
-import campaignRoutes from './routes/campaigns';
-import chatRoutes from './routes/chat';
-import { WhatsAppService } from './services/whatsapp';
+import leadRoutes from './routes/leads.js';
+import campaignRoutes from './routes/campaigns.js';
+import chatRoutes from './routes/chat.js';
+import { WhatsAppService } from './services/whatsapp.js';
 
 const app = express();
 const httpServer = createServer(app);
