@@ -113,19 +113,22 @@ app.get('/', (_req, res) => {
     });
 });
 
-// ─── Inicialização local ──────────────────────────────────────────────────────
-if (!process.env.VERCEL) {
+// ─── Inicialização ────────────────────────────────────────────────────────────
+// No ambiente Vercel, precisamos garantir que o motor inicie ou responda
+if (process.env.VERCEL) {
+    console.log('[Vercel] ☁️ Rodando em ambiente Serverless');
+    whatsapp.initialize().catch(err => {
+        console.error('[WhatsApp] Falha ao inicializar motor na Vercel:', err);
+    });
+} else {
     httpServer.listen(port, () => {
         console.log(`\n🚀 Backend CAPTU rodando → http://localhost:${port}`);
         console.log('─'.repeat(50));
         console.log(`   SUPABASE_URL          : ${process.env.SUPABASE_URL ? '✅' : '❌ FALTANDO'}`);
         console.log(`   SUPABASE_SERVICE_KEY  : ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅' : '❌ FALTANDO'}`);
         console.log(`   GEMINI_API_KEY        : ${process.env.GEMINI_API_KEY ? '✅' : '❌ FALTANDO'}`);
-        console.log(`   GOOGLE_PLACES_API_KEY : ${process.env.GOOGLE_PLACES_API_KEY ? '✅' : '❌ FALTANDO'}`);
-        console.log(`   EVOLUTION_API_URL     : ${process.env.EVOLUTION_API_URL ? '✅' : '❌ FALTANDO'}`);
         console.log('─'.repeat(50));
 
-        // Inicializar WhatsApp após o servidor estar de pé
         whatsapp.initialize().catch(err => {
             console.error('[WhatsApp] Falha ao inicializar motor nativo:', err);
         });
@@ -133,5 +136,6 @@ if (!process.env.VERCEL) {
 }
 
 // Export para Vercel Serverless Functions
-export default app;
+// Exportamos o httpServer para que o Socket.io funcione corretamente (evita 404)
+export default httpServer;
 
