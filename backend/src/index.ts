@@ -8,12 +8,9 @@ import cors from 'cors';
 import leadRoutes from './routes/leads.js';
 import campaignRoutes from './routes/campaigns.js';
 import chatRoutes from './routes/chat.js';
-import { WhatsAppService } from './services/whatsapp.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-const whatsapp = WhatsAppService.getInstance();
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const corsOptions: cors.CorsOptions = {
@@ -44,7 +41,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/chat', chatRoutes);
 
-// Health check
+// Health check - responde IMEDIATAMENTE (nunca bloqueia o startup)
 app.get('/', (_req, res) => {
     res.json({
         status: 'ok',
@@ -60,13 +57,29 @@ app.get('/', (_req, res) => {
 if (process.env.VERCEL) {
     console.log('[Vercel] ☁️ Rodando em ambiente Serverless (Somente API REST)');
 } else {
-    app.listen(port, () => {
+    // O servidor escuta a porta PRIMEIRO — garante que o healthcheck passe imediatamente
+    const server = app.listen(port, () => {
         console.log(`\n🚀 Backend CAPTU rodando → http://localhost:${port}`);
         console.log('─'.repeat(50));
-        whatsapp.initialize().catch(err => {
-            console.error('[WhatsApp] Falha ao inicializar motor:', err);
-        });
     });
+
+    server.on('error', (err: Error) => {
+        console.error('[Server] Erro ao iniciar:', err);
+        process.exit(1);
+    });
+
+    // Inicializa o WhatsApp DEPOIS que o servidor já está ouvindo
+    // O delay garante que o healthcheck do Railway passe antes de qualquer operação pesada
+    setTimeout(async () => {
+        try {
+            const { WhatsAppService } = await import('./services/whatsapp.js');
+            const whatsapp = WhatsAppService.getInstance();
+            await whatsapp.initialize();
+            console.log('[WhatsApp] ✅ Motor inicializado com sucesso');
+        } catch (err) {
+            console.error('[WhatsApp] ⚠️ Falha ao inicializar motor (servidor continua rodando):', err);
+        }
+    }, 2000); // Aguarda 2s para o healthcheck passar antes de iniciar o WhatsApp
 }
 
 export default app;
