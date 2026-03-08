@@ -147,4 +147,32 @@ router.get('/profile-pic/:jid', async (req, res) => {
     }
 });
 
+// GET /api/chat/media/:jid/:msgId - Serve mídia descriptografada
+router.get('/media/:jid/:msgId', async (req, res) => {
+    try {
+        const { jid, msgId } = req.params;
+        const buffer = await whatsapp.downloadMedia(jid, msgId);
+        
+        if (!buffer) {
+            return res.status(404).send('Media not found');
+        }
+
+        // Detectar tipo pelo query param ou mensagem
+        const type = req.query.type || 'image';
+        const contentType = type === 'audio' ? 'audio/ogg' : type === 'sticker' ? 'image/webp' : 'image/jpeg';
+        
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache longo para mídias
+        res.send(buffer);
+    } catch (error: any) {
+        res.status(500).send('Error downloading media');
+    }
+});
+
+// GET /api/chat/messages/:jid - Retorna as mensagens de um chat específico
+router.get('/messages/:jid', (req, res) => {
+    const { jid } = req.params;
+    res.json(whatsapp.getMessages(jid));
+});
+
 export default router;

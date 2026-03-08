@@ -6,7 +6,8 @@ import makeWASocket, {
     WAConnectionState,
     BufferJSON,
     proto,
-    initAuthCreds
+    initAuthCreds,
+    downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -48,7 +49,7 @@ export class WhatsAppService {
     private io: any = null;
     private isInitializing = false;
     private isPaired = false;
-    private historyCache: { chats: any[], messages: any[], contacts: any[] } = { chats: [], messages: [], contacts: [] };
+    private historyCache: { chats: any[], messages: Record<string, any[]>, contacts: any[] } = { chats: [], messages: {}, contacts: [] };
     private cacheInterval: any = null;
 
     private constructor() {
@@ -59,9 +60,9 @@ export class WhatsAppService {
                 const parsed = JSON.parse(data);
                 // Cache persistente maior para suportar sincronização completa
                 this.historyCache = {
-                    chats: (parsed.chats || []).slice(0, 250),
-                    messages: (parsed.messages || []).slice(0, 500),
-                    contacts: (parsed.contacts || []).slice(0, 500)
+                    chats: (parsed.chats || []).slice(0, 500),
+                    messages: parsed.messages || {},
+                    contacts: (parsed.contacts || []).slice(0, 1000)
                 };
                 console.log(`[WhatsApp Proxy] Cache carregado: ${this.historyCache.chats.length} chats.`);
             }
@@ -248,6 +249,14 @@ export class WhatsAppService {
                 generateHighQualityLinkPreview: true
             });
 
+            // Inicializa canal de broadcast IMEDIATAMENTE para ouvir comandos do front
+            if (!this.broadcastChannel) {
+                this.broadcastChannel = supabase.channel('whatsapp-events');
+                this.broadcastChannel.subscribe((status: string) => {
+                    if (status === 'SUBSCRIBED') this.channelSubscribed = true;
+                });
+            }
+
             this.socket.ev.on('creds.update', async (update: any) => {
                 await saveCreds();
                 if (this.socket?.creds?.me) {
@@ -272,6 +281,7 @@ export class WhatsAppService {
                         if (existingIdx === -1) {
                             this.historyCache.contacts.push({
                                 id: c.id,
+                                lid: c.lid, // PRESERVAR LID PARA RESOLUÇÃO NO FRONT
                                 name: c.name || c.notify || c.verifiedName || c.id.split('@')[0],
                                 pushName: c.notify,
                                 imgUrl: null
@@ -280,6 +290,7 @@ export class WhatsAppService {
                             const existing = this.historyCache.contacts[existingIdx];
                             this.historyCache.contacts[existingIdx] = {
                                 ...existing,
+                                lid: c.lid || existing.lid,
                                 name: c.name || c.verifiedName || existing.name,
                                 pushName: c.notify || existing.pushName
                             };
@@ -374,7 +385,7 @@ export class WhatsAppService {
 
                     if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                         await clearSession();
-                        this.historyCache = { chats: [], messages: [], contacts: [] };
+                        this.historyCache = { chats: [], messages: {}, contacts: [] };
                         try { 
                             const cachePath = process.env.VERCEL ? '/tmp/whatsapp_proxy_cache.json' : './whatsapp_proxy_cache.json';
                             if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath); 
@@ -418,15 +429,45 @@ export class WhatsAppService {
                     this.mergeMessages(m.messages);
                     for (const msg of m.messages) {
                         this.broadcastEvent('new-message', msg);
+                        // Se for mensagem de grupo, tenta forçar sincronização de participantes
+                        if (msg.key.remoteJid?.endsWith('@g.us')) {
+                            this.syncGroupMetadata(msg.key.remoteJid);
+                        }
                     }
                     this.saveCache();
                 }
             });
 
             this.socket.ev.on('contacts.upsert', (contacts: any[]) => {
-                this.historyCache.contacts.push(...contacts);
+                contacts.forEach(c => {
+                    const idx = this.historyCache.contacts.findIndex(hc => hc.id === c.id);
+                    if (idx > -1) {
+                        this.historyCache.contacts[idx] = { ...this.historyCache.contacts[idx], ...c };
+                    } else {
+                        this.historyCache.contacts.push(c);
+                    }
+                });
                 this.broadcastEvent('contacts-upsert', contacts);
             });
+
+            this.socket.ev.on('contacts.update', (updates: any[]) => {
+                updates.forEach(u => {
+                    const idx = this.historyCache.contacts.findIndex(hc => hc.id === u.id);
+                    if (idx > -1) {
+                        this.historyCache.contacts[idx] = { ...this.historyCache.contacts[idx], ...u };
+                    }
+                });
+                this.broadcastEvent('contacts-upsert', updates);
+            });
+
+            // GATILHO EXTERNO: Permite que o frontend peça sincronização de um grupo específico
+            if (this.broadcastChannel) {
+                this.broadcastChannel.on('broadcast', { event: 'request-group-sync' }, ({ payload }: any) => {
+                    if (payload?.jid) {
+                        this.syncGroupMetadata(payload.jid);
+                    }
+                });
+            }
 
         } catch (err) {
             console.error('[WhatsApp] Erro na inicialização:', err);
@@ -458,6 +499,36 @@ export class WhatsAppService {
         }
     }
 
+    public async downloadMedia(jid: string, msgId: string): Promise<Buffer | null> {
+        try {
+            if (!this.socket) return null;
+            
+            const chatMsgs = this.historyCache.messages[jid] || [];
+            const msg = chatMsgs.find(m => m.key.id === msgId);
+            
+            if (!msg || (!msg.message?.imageMessage && !msg.message?.videoMessage && !msg.message?.audioMessage && !msg.message?.stickerMessage)) return null;
+            
+            const buffer = await downloadMediaMessage(
+                msg,
+                'buffer',
+                {},
+                { 
+                    logger,
+                    reuploadRequest: this.socket.updateMediaMessage
+                }
+            );
+            
+            return buffer as Buffer;
+        } catch (err) {
+            console.error('[WhatsApp] Erro ao baixar mídia:', err);
+            return null;
+        }
+    }
+
+    public getMessages(jid: string) {
+        return this.historyCache.messages[jid] || [];
+    }
+
     public async sendMessage(chatId: string, message: string) {
         if (!this.socket || this.connectionState !== 'open') throw new Error('WhatsApp não está conectado');
         const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
@@ -477,7 +548,7 @@ export class WhatsAppService {
             this.qrCode = null;
             this.isPaired = false;
             this.isInitializing = false;
-            this.historyCache = { chats: [], messages: [], contacts: [] };
+            this.historyCache = { chats: [], messages: {}, contacts: [] };
             
             try { 
                 const cachePath = process.env.VERCEL ? '/tmp/whatsapp_proxy_cache.json' : './whatsapp_proxy_cache.json';
@@ -524,22 +595,30 @@ export class WhatsAppService {
     }
 
     private mergeMessages(messages: any[]) {
-        const msgMap = new Map();
-        
-        // Adiciona novos primeiro (preserva ordem relativa)
         messages.forEach(m => {
-            if (m.key && m.key.id) msgMap.set(m.key.id, m);
-        });
-        
-        // Complementa com o cache antigo
-        this.historyCache.messages.forEach(m => {
-            if (m.key && m.key.id && !msgMap.has(m.key.id)) {
-                msgMap.set(m.key.id, m);
+            if (!m.key || !m.key.remoteJid) return;
+            const jid = m.key.remoteJid;
+            
+            if (!this.historyCache.messages[jid]) {
+                this.historyCache.messages[jid] = [];
             }
-        });
 
-        // Converte de volta e limita
-        this.historyCache.messages = Array.from(msgMap.values()).slice(0, 500);
+            const chatMsgs = this.historyCache.messages[jid];
+            const existingIdx = chatMsgs.findIndex(em => em.key.id === m.key.id);
+            
+            if (existingIdx > -1) {
+                chatMsgs[existingIdx] = { ...chatMsgs[existingIdx], ...m };
+            } else {
+                chatMsgs.push(m);
+            }
+
+            // Ordena e limita a 100 mensagens por chat para performance profissional
+            this.historyCache.messages[jid] = chatMsgs.sort((a: any, b: any) => {
+                const tA = Number(a.messageTimestamp?.low || a.messageTimestamp || 0);
+                const tB = Number(b.messageTimestamp?.low || b.messageTimestamp || 0);
+                return tA - tB; // Ordem cronológica
+            }).slice(-100);
+        });
     }
 
     private saveCache() {
@@ -562,6 +641,62 @@ export class WhatsAppService {
 
     public getHistoryCache() {
         return this.historyCache;
+    }
+
+    private groupSyncTokens = new Set<string>();
+
+    public async syncGroupMetadata(groupJid: string) {
+        if (!this.socket || !groupJid.endsWith('@g.us')) return;
+        
+        // Evita chamadas duplicadas excessivas
+        if (this.groupSyncTokens.has(groupJid)) return;
+        this.groupSyncTokens.add(groupJid);
+        setTimeout(() => this.groupSyncTokens.delete(groupJid), 15000); // Cooldown reduzido para 15s
+
+        try {
+            console.log(`[WhatsApp] 🔍 Sincronizando metadados do grupo: ${groupJid}`);
+            const metadata = await this.socket.groupMetadata(groupJid);
+            if (metadata && metadata.participants) {
+                const mappedContacts: any[] = [];
+                metadata.participants.forEach((p: any) => {
+                    const jid = p.id;
+                    const lid = p.lid;
+                    
+                    if (lid && jid) {
+                        console.log(`[WhatsApp] 🔗 Mapeando Identidade: ${lid} -> ${jid} (${p.notify || 'Sem Nome'})`);
+                        mappedContacts.push({
+                            id: jid,
+                            lid: lid,
+                            notify: p.notify || null,
+                            name: p.name || null
+                        });
+                        
+                        // Atualiza cache local de contatos
+                        const idx = this.historyCache.contacts.findIndex(hc => hc.id === jid);
+                        const contactPayload = { 
+                            id: jid, 
+                            lid: lid, 
+                            pushName: p.notify, 
+                            name: p.name || p.notify || jid.split('@')[0] 
+                        };
+
+                        if (idx > -1) {
+                            this.historyCache.contacts[idx] = { ...this.historyCache.contacts[idx], ...contactPayload };
+                        } else {
+                            this.historyCache.contacts.push(contactPayload);
+                        }
+                    }
+                });
+                
+                if (mappedContacts.length > 0) {
+                    console.log(`[WhatsApp] ✅ Resolvidos ${mappedContacts.length} participantes para o grupo: ${groupJid}`);
+                    // Transmitir para o frontend atualizar o lidMap e contatos
+                    this.broadcastEvent('contacts-upsert', mappedContacts);
+                }
+            }
+        } catch (err) {
+            console.error(`[WhatsApp] ❌ Erro ao sincronizar grupo ${groupJid}:`, err);
+        }
     }
 
     public async handleSyncTimeoutLog() {
@@ -599,6 +734,14 @@ export class WhatsAppService {
                 this.broadcastEvent('connection-update', { connection: 'open', qr: null, isPaired: true });
                 this.broadcastEvent('sync-ready', { chatsCount: this.historyCache.chats.length });
                 console.log(`[WhatsApp] ✅ Sincronização Atômica 11.0 Concluída!`);
+                
+                // GATILHO EXTRA: Sincroniza metadados dos 5 chats mais recentes se forem grupos
+                this.historyCache.chats.slice(0, 5).forEach(chat => {
+                    if (chat.id.endsWith('@g.us')) {
+                        this.syncGroupMetadata(chat.id);
+                    }
+                });
+
                 this.syncIsFinalizing = false;
             }, 300);
         }
