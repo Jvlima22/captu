@@ -16,30 +16,35 @@ const PIPEDRIVE_CLIENT_ID = process.env.PIPEDRIVE_CLIENT_ID;
 const PIPEDRIVE_CLIENT_SECRET = process.env.PIPEDRIVE_CLIENT_SECRET;
 const PIPEDRIVE_REDIRECT_URI = process.env.PIPEDRIVE_REDIRECT_URI || 
   (process.env.NODE_ENV === 'production' 
-    ? 'https://captu.vercel.app' 
-    : 'http://localhost:3000');
+    ? 'https://captu.vercel.app/api/auth/callback/pipedrive' 
+    : 'http://localhost:3000/api/auth/callback/pipedrive');
 
 /**
  * GET /api/auth/integrations/:id
  * Initiates the OAuth flow for a specific integration
  */
 router.get('/integrations/:id', (req, res) => {
-  const { id } = req.params;
-  
-  if (id === 'hubspot') {
-    const scopes = 'crm.objects.contacts.read crm.objects.contacts.write';
-    const authUrl = `https://app.hubspot.com/oauth/authorize?client_id=${HUBSPOT_CLIENT_ID}&redirect_uri=${encodeURIComponent(HUBSPOT_REDIRECT_URI as string)}&scope=${scopes}`;
-    return res.redirect(authUrl);
-  }
+  try {
+    const { id } = req.params;
+    
+    if (id === 'hubspot') {
+      const scopes = 'crm.objects.contacts.read crm.objects.contacts.write';
+      const authUrl = `https://app.hubspot.com/oauth/authorize?client_id=${HUBSPOT_CLIENT_ID}&redirect_uri=${encodeURIComponent(HUBSPOT_REDIRECT_URI as string)}&scope=${scopes}`;
+      return res.redirect(authUrl);
+    }
 
-  if (id === 'pipedrive') {
-    const authUrl = `https://oauth.pipedrive.com/oauth/authorize?client_id=${PIPEDRIVE_CLIENT_ID}&redirect_uri=${encodeURIComponent(PIPEDRIVE_REDIRECT_URI as string)}`;
-    console.log('[Pipedrive] Redirecting to:', authUrl);
-    return res.redirect(authUrl);
+    if (id === 'pipedrive') {
+      const authUrl = `https://oauth.pipedrive.com/oauth/authorize?client_id=${PIPEDRIVE_CLIENT_ID}&redirect_uri=${encodeURIComponent(PIPEDRIVE_REDIRECT_URI as string)}`;
+      console.log('[Pipedrive] Redirecting to:', authUrl);
+      return res.redirect(authUrl);
+    }
+    
+    // Fallback or other tools
+    res.status(404).json({ error: 'Integration flow not implemented yet for ' + id });
+  } catch (error: any) {
+    console.error('Initiation Error:', error);
+    res.status(500).send('<h1>Erro Interno</h1><p>Ocorreu uma falha ao iniciar a conexão.</p>');
   }
-  
-  // Fallback or other tools
-  res.status(404).json({ error: 'Integration flow not implemented yet for ' + id });
 });
 
 /**

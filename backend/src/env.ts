@@ -10,10 +10,12 @@ const __dirname = dirname(__filename);
 const rootEnv = path.resolve(__dirname, '../../.env');
 const localEnv = path.resolve(__dirname, '../.env');
 
-if (fs.existsSync(rootEnv)) {
-    dotenv.config({ path: rootEnv });
-} else if (fs.existsSync(localEnv)) {
-    dotenv.config({ path: localEnv });
-} else {
-    dotenv.config();
+if (!process.env.VERCEL) {
+    if (fs.existsSync(rootEnv)) {
+        dotenv.config({ path: rootEnv });
+    } else if (fs.existsSync(localEnv)) {
+        dotenv.config({ path: localEnv });
+    } else {
+        dotenv.config();
+    }
 }
