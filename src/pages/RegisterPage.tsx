@@ -288,7 +288,7 @@ export default function RegisterPage() {
 
                         <p className="text-xs text-center text-gray-500">
                             Ao avançar, estou concordando com os{" "}
-                            <Link to="/terms" className="text-[#182B41] hover:text-[#5784F3] transition-colors">
+                            <Link to="/terms-service" className="text-[#182B41] hover:text-primary transition-colors">
                                 Termos de Serviço
                             </Link>{" "}
                             da Captu.
@@ -302,6 +302,11 @@ export default function RegisterPage() {
                         >
                             Já tem uma conta? <span className="text-[#182B41] hover:text-[#5784F3] transition-colors">Entre.</span>
                         </Link>
+                    </div>
+
+                    <div className="pt-8 flex justify-center gap-6 text-xs text-gray-500 font-medium">
+                        <Link to="/terms-service" className="hover:text-primary transition-colors">Termos de Serviço</Link>
+                        <Link to="/privacy" className="hover:text-primary transition-colors">Aviso de Privacidade</Link>
                     </div>
                 </div>
             </div>

@@ -221,6 +221,11 @@ export default function LoginPage() {
                             </Button>
                         </div>
                     </form>
+                    
+                    <div className="pt-8 flex justify-center gap-6 text-xs text-gray-500 font-medium">
+                        <Link to="/terms-service" className="hover:text-primary transition-colors">Termos de Serviço</Link>
+                        <Link to="/privacy" className="hover:text-primary transition-colors">Aviso de Privacidade</Link>
+                    </div>
                 </div>
             </div>
 

@@ -297,6 +297,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}>
             {children}
           </div>
+          
+          <footer className="w-full py-4 text-center text-xs text-sidebar-muted-foreground/60 border-t border-sidebar-border/30 mt-auto">
+            <div className="flex justify-center gap-4 mb-1">
+              <Link to="/terms-service" className="hover:text-primary transition-colors">Termos de Serviço</Link>
+              <Link to="/privacy" className="hover:text-primary transition-colors">Aviso de Privacidade</Link>
+            </div>
+            <p>© 2026 CAPTU - Inteligência de Mercado</p>
+          </footer>
         </main>
       </div>
 

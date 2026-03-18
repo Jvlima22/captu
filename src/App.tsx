@@ -19,6 +19,8 @@ import AutomationsPage from "./pages/AutomationsPage";
 import SettingsPage from "./pages/SettingsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import NotFound from "./pages/NotFound";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 const queryClient = new QueryClient();
@@ -35,6 +37,8 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/terms-service" element={<TermsPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
 
             {/* Protected Routes */}
             <Route
