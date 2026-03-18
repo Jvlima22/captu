@@ -86,6 +86,7 @@ router.get('/active-tasks', async (req, res) => {
                             email: lead.email,
                             city: lead.city,
                             segment: lead.segment,
+                            origin: lead.origin, // Inclui a origem no disparo manual também
                             message: message, // Texto já processado
                             channel: 'whatsapp',
                             step: 1
@@ -159,6 +160,7 @@ router.get('/active-tasks', async (req, res) => {
                                     email: lead.email,
                                     city: lead.city,
                                     segment: lead.segment,
+                                    origin: lead.origin, // Inclui a origem para routing
                                     message: message,
                                     channel: 'whatsapp',
                                     step: 1

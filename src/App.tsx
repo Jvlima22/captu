@@ -17,6 +17,7 @@ import ChatPage from "@/pages/ChatPage";
 import MetricsPage from "./pages/MetricsPage";
 import AutomationsPage from "./pages/AutomationsPage";
 import SettingsPage from "./pages/SettingsPage";
+import IntegrationsPage from "./pages/IntegrationsPage";
 import NotFound from "./pages/NotFound";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -112,6 +113,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <AutomationsPage />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/integrations"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <IntegrationsPage />
                   </AppLayout>
                 </ProtectedRoute>
               }

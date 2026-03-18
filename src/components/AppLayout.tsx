@@ -13,7 +13,8 @@ import {
   LogOut,
   Moon,
   Sun,
-  Menu
+  Menu,
+  Blocks
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ const navItems = [
   { to: "/contacts", icon: Users, label: "Pipeline" },
   { to: "/metrics", icon: BarChart3, label: "Métricas" },
   { to: "/automations", icon: Zap, label: "Automações" },
+  { to: "/integrations", icon: Blocks, label: "Integrações" },
 ];
 
 const bottomItems = [

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import { searchLeads } from '../services/googlePlaces.js';
+import { searchLinkedinCompanies } from '../services/linkedinSearch.js';
 import { generateSalesCopy } from '../services/aiService.js';
 
 
@@ -136,6 +137,45 @@ router.post('/collect', async (req, res) => {
     }
 });
 
+// POST /api/leads/collect-linkedin - Coleta leads do LinkedIn via Tavily/Search
+router.post('/collect-linkedin', async (req, res) => {
+    const { query, city } = req.body;
+
+    if (!query || !city) {
+        return res.status(400).json({ error: 'Query and city are required' });
+    }
+
+    try {
+        console.log(`[LinkedIn] Buscando empresas para: ${query} em ${city}`);
+        const leads = await searchLinkedinCompanies(query, city);
+
+        if (!leads || leads.length === 0) {
+            return res.json({ message: 'Nenhuma empresa encontrada no LinkedIn', count: 0, data: [] });
+        }
+
+        // Salva os leads no banco
+        const { data: savedData, error: upsertError } = await supabase
+            .from('leads')
+            .upsert(leads, { onConflict: 'website', ignoreDuplicates: true }) // No LinkedIn, a URL é o ID único
+            .select();
+
+        if (upsertError) {
+            console.error('Erro ao salvar leads do LinkedIn:', upsertError);
+            // Fallback para insert simples
+            await supabase.from('leads').insert(leads);
+        }
+
+        res.json({ 
+            message: 'Empresas do LinkedIn coletadas com sucesso', 
+            count: leads.length, 
+            data: savedData || leads 
+        });
+
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // POST /api/leads/:id/send-to-n8n - Dispara automação no n8n para um lead específico
 router.post('/:id/send-to-n8n', async (req, res) => {
     const { id } = req.params;
@@ -155,11 +195,19 @@ router.post('/:id/send-to-n8n', async (req, res) => {
             return res.status(404).json({ error: 'Lead not found' });
         }
 
-        // 2. Dispara webhook para o n8n
-        const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
+        // 2. Lógica Dinâmica de Webhook baseada na Origem
+        let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL; // URL Padrão (Google Maps)
+        const linkedinWebhookUrl = process.env.N8N_LINKEDIN_WEBHOOK_URL; // URL Nova (LinkedIn)
+
+        if (lead.origin === 'linkedin' && linkedinWebhookUrl && !linkedinWebhookUrl.includes('...')) {
+            console.log(`[Webhook Router] Lead do LinkedIn detectado. Redirecionando para: ${linkedinWebhookUrl}`);
+            n8nWebhookUrl = linkedinWebhookUrl;
+        } else {
+            console.log(`[Webhook Router] Usando webhook padrão. Origem: ${lead.origin || 'google_places'}`);
+        }
 
         if (!n8nWebhookUrl || n8nWebhookUrl.includes('...')) {
-            return res.status(400).json({ error: 'n8n Webhook URL not configured' });
+            return res.status(400).json({ error: 'Webhook URL not configured for this origin' });
         }
 
         const response = await axios.post(n8nWebhookUrl, {

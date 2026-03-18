@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, MapPin, Building2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Star, Globe, Phone, Filter } from "lucide-react";
+import { Search, MapPin, Building2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Star, Globe, Phone, Filter, Linkedin } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ export default function SearchPage() {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<any[] | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [searchType, setSearchType] = useState<"maps" | "linkedin">("maps");
 
   // Filtros Avançados
   const [radius, setRadius] = useState([15]); // km
@@ -32,17 +33,20 @@ export default function SearchPage() {
     setShowAdvanced(false); // Oculta filtros avançados ao buscar
 
     try {
-      const response = await fetch(`${API_URL}/api/leads/collect`, {
+      const endpoint = searchType === "maps" ? "collect" : "collect-linkedin";
+      const response = await fetch(`${API_URL}/api/leads/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: niche,
           city: city,
-          radius: radius[0] * 1000, // converter km para metros
-          minRating: minRating[0],
-          minReviews: minReviews,
-          onlyWithoutWebsite: onlyWithoutWebsite,
-          onlyWithPhone: onlyWithPhone
+          ...(searchType === "maps" && {
+            radius: radius[0] * 1000,
+            minRating: minRating[0],
+            minReviews: minReviews,
+            onlyWithoutWebsite: onlyWithoutWebsite,
+            onlyWithPhone: onlyWithPhone
+          })
         }),
       });
 
@@ -51,8 +55,9 @@ export default function SearchPage() {
       const data = await response.json();
       setResults(data.data || []);
 
-      toast.success(`${data.count || 0} leads coletados e qualificados com sucesso!`, {
-        description: "Os leads foram salvos no seu banco de dados.",
+      const sourceName = searchType === "maps" ? "Google Maps" : "LinkedIn";
+      toast.success(`${data.count || 0} leads de ${sourceName} coletados!`, {
+        description: `Os leads foram salvos e qualificados com sucesso.`,
         action: {
           label: "Ver Leads",
           onClick: () => navigate("/leads"),
@@ -78,7 +83,29 @@ export default function SearchPage() {
 
   return (
     <>
-      <PageHeader title="Buscar Empresas" description="Encontre empresas qualificadas por nicho e região usando Google Places" />
+      <PageHeader title="Buscar Empresas" description="Encontre e qualifique leads corporativos usando Google Maps ou LinkedIn" />
+
+      {/* Seletor de Origem */}
+      <div className="flex p-1 bg-muted/30 rounded-xl w-fit mb-6 border border-border/50">
+        <Button 
+          variant={searchType === "maps" ? "default" : "ghost"} 
+          size="sm"
+          onClick={() => { setSearchType("maps"); setResults(null); }}
+          className={`rounded-lg px-6 transition-all ${searchType === "maps" ? "shadow-md" : ""}`}
+        >
+          <MapPin className="h-4 w-4 mr-2" />
+          Google Maps
+        </Button>
+        <Button 
+          variant={searchType === "linkedin" ? "default" : "ghost"} 
+          size="sm"
+          onClick={() => { setSearchType("linkedin"); setResults(null); }}
+          className={`rounded-lg px-6 transition-all ${searchType === "linkedin" ? "shadow-md" : ""}`}
+        >
+          <Linkedin className="h-4 w-4 mr-2" />
+          LinkedIn
+        </Button>
+      </div>
 
       <div className="glass-card rounded-xl p-6 mb-8 max-w-4xl">
         {/* Filtros Básicos */}
@@ -92,7 +119,7 @@ export default function SearchPage() {
               <div className="relative group">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                 <Input
-                  placeholder="Ex: Oficina Mecânica, Restaurante..."
+                  placeholder={searchType === "maps" ? "Ex: Oficina Mecânica, Restaurante..." : "Ex: Software, Advocacia, Marketing..."}
                   className="pl-10 h-12 md:h-11 transition-all"
                   value={niche}
                   onChange={(e) => setNiche(e.target.value)}
@@ -102,7 +129,7 @@ export default function SearchPage() {
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                 <MapPin className="h-3.5 w-3.5 text-primary" />
-                Cidade
+                Cidade / Região
               </Label>
               <div className="relative group">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
@@ -116,24 +143,26 @@ export default function SearchPage() {
             </div>
           </div>
 
-          {/* Toggle Filtros Avançados */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border/50" />
+          {/* Toggle Filtros Avançados (Apenas Maps por enquanto) */}
+          {searchType === "maps" && (
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border/50" />
+              </div>
+              <div className="relative flex justify-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="bg-background px-4 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
+                >
+                  <Filter className="h-4 w-4 mr-2" />
+                  {showAdvanced ? "Ocultar Filtros Avançados" : "Mostrar Filtros Avançados"}
+                  {showAdvanced ? <ChevronUp className="h-4 w-4 ml-2" /> : <ChevronDown className="h-4 w-4 ml-2" />}
+                </Button>
+              </div>
             </div>
-            <div className="relative flex justify-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="bg-background px-4 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                {showAdvanced ? "Ocultar Filtros Avançados" : "Mostrar Filtros Avançados"}
-                {showAdvanced ? <ChevronUp className="h-4 w-4 ml-2" /> : <ChevronDown className="h-4 w-4 ml-2" />}
-              </Button>
-            </div>
-          </div>
+          )}
 
           {/* Filtros Avançados */}
           {showAdvanced && (
@@ -342,12 +371,12 @@ export default function SearchPage() {
             {searching ? (
               <>
                 <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Coletando e Qualificando...
+                {searchType === "maps" ? "Coletando do Maps..." : "Mapeando LinkedIn..."}
               </>
             ) : (
               <>
                 <Search className="h-5 w-5 mr-2" />
-                Buscar e Salvar Leads
+                {searchType === "maps" ? "Buscar e Salvar Leads" : "Localizar Empresas no LinkedIn"}
               </>
             )}
           </Button>
@@ -367,8 +396,8 @@ export default function SearchPage() {
           {results.slice(0, 10).map((r, i) => (
             <div key={i} className="glass-card rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:shadow-lg transition-shadow border border-border/50">
               <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success">
-                  <CheckCircle2 className="h-5 w-5" />
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${r.origin === 'linkedin' ? 'bg-blue-600/10 text-blue-600' : 'bg-success/10 text-success'}`}>
+                  {r.origin === 'linkedin' ? <Linkedin className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
                 </div>
                 <div>
                   <p className="font-bold text-foreground leading-tight">{r.name}</p>
@@ -377,13 +406,18 @@ export default function SearchPage() {
                     {r.rating && <span className="flex items-center gap-0.5">⭐ {r.rating}</span>}
                     {r.user_ratings_total && <span>({r.user_ratings_total})</span>}
                   </p>
-                  {r.phone && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 font-mono">
-                    <Phone className="h-3 w-3" /> {r.phone}
-                  </p>}
+                  {(r.phone || r.origin === 'linkedin') && (
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 font-mono">
+                      {r.origin === 'linkedin' ? <Linkedin className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
+                      {r.origin === 'linkedin' ? "Perfil Comercial" : r.phone}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3 sm:justify-end ml-14 sm:ml-0">
-                {!r.website ? (
+                {r.origin === 'linkedin' ? (
+                  <Badge className="bg-blue-600/10 text-blue-600 text-[10px] font-bold py-0.5 border-blue-600/20 uppercase tracking-tighter">LinkedIn Company</Badge>
+                ) : !r.website ? (
                   <Badge variant="destructive" className="bg-destructive/10 text-destructive text-[10px] font-bold py-0.5 border-destructive/20 uppercase tracking-tighter">Oportunidade: Sem site</Badge>
                 ) : (
                   <Badge variant="outline" className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Qualificado</Badge>

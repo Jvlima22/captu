@@ -8,6 +8,8 @@ import cors from 'cors';
 import leadRoutes from './routes/leads.js';
 import campaignRoutes from './routes/campaigns.js';
 import chatRoutes from './routes/chat.js';
+import webhookRoutes from './routes/webhooks.js';
+import integrationRoutes from './routes/integrations.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -44,6 +46,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/leads', leadRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/auth', integrationRoutes);
 
 // Health check - responde IMEDIATAMENTE (nunca bloqueia o startup)
 app.get('/', (_req, res) => {
