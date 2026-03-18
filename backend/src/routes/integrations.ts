@@ -140,8 +140,25 @@ router.get('/callback/:id', async (req, res) => {
         </html>
       `);
     } catch (error: any) {
-      console.error('Pipedrive Auth Error:', error.response?.data || error.message);
-      return res.status(500).send('<h1>Erro na Autenticação</h1><p>Não foi possível conectar ao Pipedrive.</p>');
+      const errorData = error.response?.data || error.message;
+      console.error('[Pipedrive] Auth Error details:', errorData);
+      
+      // Detailed error for debugging on Vercel
+      return res.status(500).send(`
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ff0000; border-radius: 8px; background: #fff5f5; max-width: 600px; margin: 40px auto;">
+          <h1 style="color: #d32f2f; margin-top: 0;">Erro na Autenticação (Pipedrive)</h1>
+          <p>Não foi possível concluir a conexão com o Pipedrive.</p>
+          <div style="background: #eee; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #333; overflow-x: auto;">
+            <strong>Mensagem:</strong> ${JSON.stringify(errorData)}<br><br>
+            <strong>Diagnóstico de Ambiente:</strong><br>
+            - CLIENT_ID: ${PIPEDRIVE_CLIENT_ID ? 'Configurado (OK)' : 'FALTANDO (ERRO)'}<br>
+            - CLIENT_SECRET: ${PIPEDRIVE_CLIENT_SECRET ? 'Configurado (OK)' : 'FALTANDO (ERRO)'}<br>
+            - REDIRECT_URI: ${PIPEDRIVE_REDIRECT_URI}<br>
+            - MODO: ${process.env.NODE_ENV}
+          </div>
+          <p style="margin-top: 20px; font-size: 14px;"><strong>Como corrigir:</strong> Verifique se estas chaves estão no Dashboard da Vercel e se a <code>Callback URL</code> no Pipedrive é exatamente a mesma mostrada acima.</p>
+        </div>
+      `);
     }
   }
 
