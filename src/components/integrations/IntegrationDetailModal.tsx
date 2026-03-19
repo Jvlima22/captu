@@ -7,6 +7,7 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Integration } from "@/components/integrations/types";
 import { 
   ChevronDown, 
@@ -24,19 +25,19 @@ interface IntegrationDetailModalProps {
   integration: Integration | null;
   isOpen: boolean;
   onClose: () => void;
-  onConnect: (id: string) => void;
+  onConnect: (id: string, token?: string) => void;
+  onDisconnect?: (id: string) => void;
 }
 
 export function IntegrationDetailModal({ 
   integration, 
   isOpen, 
   onClose, 
-  onConnect 
+  onConnect,
+  onDisconnect 
 } : IntegrationDetailModalProps) {
   const [showDetails, setShowDetails] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [apiKey, setApiKey] = useState("");
 
   if (!integration) return null;
 
@@ -44,68 +45,15 @@ export function IntegrationDetailModal({
   const requiresManualInput = integration.category === 'api' || integration.category === 'mcp' || integration.id === 'webhooks';
   const isBrowserLogin = !requiresManualInput;
 
-  const handleConnectAction = async () => {
-    setIsConnecting(true);
-    setConnectionStatus('testing');
-    
-    if (isBrowserLogin) {
-      // 1. OPEN BROWSER POPUP FOR LOGIN
-      const width = 600;
-      const height = 700;
-      const left = typeof window !== 'undefined' ? window.screenX + (window.outerWidth - width) / 2 : 0;
-      const top = typeof window !== 'undefined' ? window.screenY + (window.outerHeight - height) / 2 : 0;
-      
-      // Automatically detect backend URL based on current environment
-      const backendUrl = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-        ? 'http://localhost:3000' 
-        : 'https://captu.vercel.app';
-      const authUrl = `${backendUrl}/api/auth/integrations/${integration.id}?tenant_id=current_tenant`;
-      
-      const popup = window.open(
-        authUrl,
-        `Conectar ${integration.name}`,
-        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`
-      );
-
-      // 2. LISTEN FOR SUCCESS MESSAGE OR POPUP CLOSE
-      const checkPopup = setInterval(() => {
-        if (!popup || popup.closed) {
-          clearInterval(checkPopup);
-          // Standard timeout behavior for simulation or if no message received
-          if (connectionStatus !== 'success') {
-            // We'll simulate a slight delay before succeeding to show the UI states
-            setTimeout(onConnectSuccess, 1000);
-          }
-        }
-      }, 1000);
-
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'AUTH_SUCCESS' && event.data?.integrationId === integration.id) {
-          onConnectSuccess();
-          window.removeEventListener('message', handleMessage);
-          if (popup) popup.close();
-        }
-      };
-      
-      window.addEventListener('message', handleMessage);
-    } else {
-      // 3. MANUAL API KEY FLOW
-      setTimeout(() => {
-        if (!apiKey) {
-          setConnectionStatus('error');
-          setIsConnecting(false);
-        } else {
-          onConnectSuccess();
-        }
-      }, 1500);
-    }
+  const handleConnectAction = () => {
+    onConnect(integration.id, requiresManualInput ? apiKey : undefined);
+    setApiKey(""); // clear after submission
   };
 
-  const onConnectSuccess = () => {
-    setConnectionStatus('success');
-    setIsConnecting(false);
-    onConnect(integration.id);
-    setTimeout(onClose, 1500);
+  const handleDisconnectAction = () => {
+    if (onDisconnect) {
+      onDisconnect(integration.id);
+    }
   };
 
   return (
@@ -119,7 +67,7 @@ export function IntegrationDetailModal({
 
         <div className="relative p-8 flex flex-col items-center">
           {/* Icon Container */}
-          <div className="w-24 h-24 rounded-2xl bg-secondary/30 flex items-center justify-center p-5 mb-6 shadow-sm ring-1 ring-border/50">
+          <div className="w-24 h-24 rounded-2xl bg-secondary/30 flex items-center justify-center p-3 mb-6 shadow-sm ring-1 ring-border/50 overflow-hidden">
             <img 
               src={integration.icon} 
               alt={integration.name} 
@@ -138,68 +86,45 @@ export function IntegrationDetailModal({
 
           {/* Authentication Section */}
           <div className="w-full flex flex-col gap-4 mb-4">
-            {requiresManualInput ? (
-              <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">
-                    Chave da API / Token
-                  </label>
-                  <div className="relative">
-                    <Fingerprint className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input 
-                      type="password"
-                      placeholder="Cole sua chave aqui..."
+            {integration.status === 'connected' ? (
+              <Button 
+                onClick={handleDisconnectAction}
+                variant="destructive"
+                className="w-full h-12 rounded-xl font-semibold gap-2 transition-all active:scale-[0.98] shadow-md bg-red-500 hover:bg-red-600 focus-visible:ring-red-500"
+              >
+                Desconectar {integration.name}
+              </Button>
+            ) : (
+              <>
+                {requiresManualInput ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm font-medium text-foreground px-1">Insira sua API Key ({integration.name}):</p>
+                    <Input 
+                      type="password" 
+                      placeholder="sk-..." 
+                      className="h-12 rounded-xl bg-background border-border/50 text-foreground"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      className="w-full h-11 bg-secondary/30 border border-border/50 rounded-xl pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
                     />
+                    <Button 
+                      onClick={handleConnectAction}
+                      disabled={!apiKey.trim()}
+                      className="w-full h-12 rounded-xl font-semibold gap-2 transition-all active:scale-[0.98] shadow-md bg-primary hover:bg-primary/90 text-white mt-2"
+                    >
+                      Salvar e Conectar
+                    </Button>
                   </div>
-                </div>
-                <p className="text-[11px] text-muted-foreground text-center italic">
-                  Suas chaves são criptografadas e nunca compartilhadas.
-                </p>
-              </div>
-            ) : (
-              <div className="bg-primary/5 rounded-xl p-5 border border-primary/10 mb-2 text-center flex flex-col items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <ExternalLink className="w-5 h-5 text-primary" />
-                </div>
-                <p className="text-xs text-primary/80 font-medium leading-relaxed">
-                  Uma nova janela abrirá para você fazer login na sua conta <strong>{integration.name}</strong> e autorizar o CAPTU.
-                </p>
-              </div>
-            )}
-
-            <Button 
-              onClick={handleConnectAction}
-              disabled={isConnecting || connectionStatus === 'success'}
-              className={cn(
-                "w-full h-12 rounded-xl font-semibold gap-2 transition-all active:scale-[0.98] shadow-md",
-                connectionStatus === 'success' ? "bg-green-600 hover:bg-green-600" : "bg-primary hover:bg-primary/90 text-white"
-              )}
-            >
-              {isConnecting ? (
-                <>
-                  <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {isBrowserLogin ? 'Aguardando login...' : 'Testando conexão...'}
-                </>
-              ) : connectionStatus === 'success' ? (
-                <>
-                  <ShieldCheck className="w-5 h-5" />
-                  Conectado com sucesso
-                </>
-              ) : (
-                <>
-                  {isBrowserLogin ? <ExternalLink className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                  {isBrowserLogin ? 'Abrir login no Navegador' : 'Salvar chave e Conectar'}
-                </>
-              )}
-            </Button>
-
-            {connectionStatus === 'error' && (
-              <p className="text-xs text-red-500 text-center font-medium animate-pulse">
-                Falha na conexão. Verifique suas credenciais.
-              </p>
+                ) : (
+                  <Button 
+                    onClick={handleConnectAction}
+                    disabled={integration.isDisabled}
+                    className="w-full h-12 rounded-xl font-semibold gap-2 transition-all active:scale-[0.98] shadow-md bg-primary hover:bg-primary/90 text-white"
+                  >
+                    Conectar Conta do {integration.name}
+                    <ExternalLink className="w-4 h-4 ml-1 opacity-70" />
+                  </Button>
+                )}
+              </>
             )}
 
             <button 

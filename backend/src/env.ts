@@ -12,10 +12,10 @@ const localEnv = path.resolve(__dirname, '../.env');
 
 if (!process.env.VERCEL) {
     if (fs.existsSync(rootEnv)) {
-        dotenv.config({ path: rootEnv });
+        dotenv.config({ path: rootEnv, override: true });
     } else if (fs.existsSync(localEnv)) {
-        dotenv.config({ path: localEnv });
+        dotenv.config({ path: localEnv, override: true });
     } else {
-        dotenv.config();
+        dotenv.config({ override: true });
     }
 }

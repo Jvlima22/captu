@@ -70,4 +70,22 @@ export class IntegrationService {
             throw error;
         }
     }
+
+    /**
+     * Retorna a lista de nomes de integrações ativas para um usuário.
+     */
+    static async getActiveIntegrations(userId: string): Promise<string[]> {
+        const { data, error } = await supabase
+            .from('tenant_integrations')
+            .select('provider')
+            .eq('user_id', userId)
+            .eq('is_active', true);
+            
+        if (error) {
+            console.error('[Integration Service] Erro ao listar integrações ativas:', error);
+            throw new Error('Falha ao listar integrações: ' + error.message);
+        }
+        
+        return data.map(i => i.provider);
+    }
 }

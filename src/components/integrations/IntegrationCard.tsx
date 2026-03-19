@@ -29,7 +29,7 @@ export function IntegrationCard({ integration, onClick }: IntegrationCardProps) 
         </div>
       )}
       {/* Icon Container */}
-      <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-secondary/50 flex items-center justify-center p-2.5 transition-transform group-hover:scale-110">
+      <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-secondary/50 flex items-center justify-center p-1 transition-transform group-hover:scale-110">
         <img 
           src={integration.icon} 
           alt={integration.name} 
@@ -52,7 +52,7 @@ export function IntegrationCard({ integration, onClick }: IntegrationCardProps) 
             </Badge>
           )}
           {integration.status === 'connected' && (
-            <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-[10px] font-bold px-1.5 py-0 h-4 leading-none uppercase tracking-wider ml-auto">
+            <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-none text-[10px] font-bold px-1.5 py-0 h-4 leading-none uppercase tracking-wider">
               CONECTADO
             </Badge>
           )}

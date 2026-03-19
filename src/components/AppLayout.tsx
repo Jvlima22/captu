@@ -14,7 +14,8 @@ import {
   Moon,
   Sun,
   Menu,
-  Blocks
+  Blocks,
+  Sparkles
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ const navItems = [
   { to: "/contacts", icon: Users, label: "Pipeline" },
   { to: "/metrics", icon: BarChart3, label: "Métricas" },
   { to: "/automations", icon: Zap, label: "Automações" },
+  { to: "/agent", icon: Sparkles, label: "CAPTU AI" },
   { to: "/integrations", icon: Blocks, label: "Integrações" },
 ];
 
@@ -293,7 +295,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-auto bg-background flex flex-col">
           <div className={cn(
             "flex-1 flex flex-col mx-auto w-full",
-            location.pathname === "/chat" ? "max-w-full p-0 overflow-hidden" : (isPipeline ? "max-w-full p-4 md:p-6 lg:p-8" : "max-w-7xl p-4 md:p-6 lg:p-8")
+            location.pathname === "/chat" || location.pathname === "/agent" ? "max-w-full p-0 overflow-hidden" : (isPipeline ? "max-w-full p-4 md:p-6 lg:p-8" : "max-w-7xl p-4 md:p-6 lg:p-8")
           )}>
             {children}
           </div>

@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
 import { IntegrationDetailModal } from "@/components/integrations/IntegrationDetailModal";
 import { IntegrationOverview } from "@/components/integrations/IntegrationOverview";
 import { Integration } from "@/components/integrations/types";
+import { API_URL } from "@/config";
 
 const INITIAL_INTEGRATIONS: Integration[] = [
   // APPS - CRMs
@@ -27,11 +29,11 @@ const INITIAL_INTEGRATIONS: Integration[] = [
     category: "apps",
     type: "CRM",
     status: "not_connected",
-    isNew: true,
     author: "CAPTU Official",
     website: "https://pipedrive.com",
     privacyPolicy: "https://pipedrive.com/privacy",
-    uuid: "crm-pipe-01"
+    uuid: "crm-pipe-01",
+    isDisabled: true
   },
   {
     id: "hubspot",
@@ -64,7 +66,7 @@ const INITIAL_INTEGRATIONS: Integration[] = [
     id: "salesforce",
     name: "Salesforce",
     description: "A plataforma de CRM líder mundial para grandes empresas e operações.",
-    icon: "https://www.google.com/s2/favicons?domain=salesforce.com&sz=128",
+    icon: "https://pluspng.com/img-png/logo-salesforce-png--366.png",
     category: "apps",
     type: "CRM",
     status: "not_connected",
@@ -100,19 +102,6 @@ const INITIAL_INTEGRATIONS: Integration[] = [
     website: "https://discord.com",
     privacyPolicy: "https://discord.com/privacy",
     uuid: "comm-disc-13"
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp Hub",
-    description: "Inicie conversas via Evolution API assim que o lead for descoberto.",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
-    category: "apps",
-    type: "Mensageria",
-    status: "connected",
-    author: "CAPTU Official",
-    website: "https://evolution-api.com",
-    privacyPolicy: "https://evolution-api.com/privacy",
-    uuid: "comm-wa-04"
   },
   {
     id: "telegram",
@@ -191,7 +180,7 @@ const INITIAL_INTEGRATIONS: Integration[] = [
     icon: "https://upload.wikimedia.org/wikipedia/commons/3/30/Google_Sheets_logo_%282014-2020%29.svg",
     category: "apps",
     type: "Dados",
-    status: "connected",
+    status: "not_connected",
     author: "CAPTU Official",
     website: "https://sheets.google.com",
     privacyPolicy: "https://google.com/privacy",
@@ -270,7 +259,7 @@ const INITIAL_INTEGRATIONS: Integration[] = [
     id: "webhooks",
     name: "Webhooks",
     description: "Configure gatilhos personalizados para enviar dados a qualquer sistema externo.",
-    icon: "https://cdn-icons-png.flaticon.com/512/2885/2885417.png",
+    icon: "https://p.kindpng.com/picc/s/404-4042143_webhook-logo-png-transparent-png.png",
     category: "api",
     type: "Infra",
     status: "not_connected",
@@ -281,12 +270,12 @@ const INITIAL_INTEGRATIONS: Integration[] = [
   },
   {
     id: "n8n_hub",
-    name: "n8n Hub",
+    name: "N8n",
     description: "Conecte-se com mais de 400 aplicativos através da nossa bridge n8n.",
-    icon: "https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-logo.svg",
+    icon: "https://n8n-brasil.github.io/n8n-Doc-PT-BR/img/n8n-color_dark.webp",
     category: "api",
     type: "Automação",
-    status: "connected",
+    status: "not_connected",
     author: "CAPTU Official",
     website: "https://n8n.io",
     privacyPolicy: "https://n8n.io/privacy",
@@ -322,12 +311,12 @@ const INITIAL_INTEGRATIONS: Integration[] = [
   // AI / MCP
   {
     id: "openai",
-    name: "OpenAI GPT-4",
-    description: "O cérebro por trás dos seus scripts de vendas e análises de mercado.",
+    name: "OpenAI",
+    description: "O modelo mais avançado da OpenAI para geração de scripts, análise de leads e resumos automáticos.",
     icon: "https://upload.wikimedia.org/wikipedia/commons/0/04/ChatGPT_logo.svg",
     category: "mcp",
     type: "AI Model",
-    status: "connected",
+    status: "not_connected",
     author: "OpenAI",
     website: "https://openai.com",
     privacyPolicy: "https://openai.com/privacy",
@@ -335,52 +324,252 @@ const INITIAL_INTEGRATIONS: Integration[] = [
   },
   {
     id: "anthropic",
-    name: "Claude 3.5",
-    description: "Geração de cópias ultra-personalizadas focadas em conversão B2B.",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/7/7b/Anthropic_logo.svg",
+    name: "Claude",
+    description: "Geração de cópias ultra-personalizadas e análise de contexto para conversão B2B.",
+    icon: "https://img.utdstc.com/icon/9c5/6fe/9c56fe2b44e1d0367b98c2c5ee2255aebbd7093902bffed36aa36e3431b40fb5:500",
     category: "mcp",
     type: "AI Model",
     status: "not_connected",
-    isNew: true,
     author: "Anthropic",
     website: "https://anthropic.com",
     privacyPolicy: "https://anthropic.com/privacy",
     uuid: "ai-ant-10"
+  },
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    description: "A IA do Google com integração nativa ao Workspace para pesquisa e análise de dados de leads.",
+    icon: "https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg",
+    category: "mcp",
+    type: "AI Model",
+    status: "not_connected",
+    isNew: true,
+    author: "Google",
+    website: "https://gemini.google.com",
+    privacyPolicy: "https://policies.google.com/privacy",
+    uuid: "ai-gem-25"
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    description: "A IA da xAI com acesso em tempo real ao X (Twitter) para monitorar tendências e leads.",
+    icon: "https://www.google.com/s2/favicons?domain=x.ai&sz=128",
+    category: "mcp",
+    type: "AI Model",
+    status: "not_connected",
+    isNew: true,
+    author: "xAI",
+    website: "https://x.ai",
+    privacyPolicy: "https://x.ai/privacy",
+    uuid: "ai-grok-26"
+  },
+  {
+    id: "perplexity",
+    name: "Perplexity AI",
+    description: "Pesquisa de empresas, concorrentes e mercados em tempo real com citações verificadas.",
+    icon: "https://www.google.com/s2/favicons?domain=perplexity.ai&sz=128",
+    category: "mcp",
+    type: "AI Research",
+    status: "not_connected",
+    isNew: true,
+    author: "Perplexity AI",
+    website: "https://perplexity.ai",
+    privacyPolicy: "https://perplexity.ai/privacy",
+    uuid: "ai-perp-27"
+  },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs",
+    description: "Gere áudios de prospecção com voz ultra-realista para abordagens personalizadas em escala.",
+    icon: "https://www.google.com/s2/favicons?domain=elevenlabs.io&sz=128",
+    category: "mcp",
+    type: "AI Voice",
+    status: "not_connected",
+    isNew: true,
+    author: "ElevenLabs",
+    website: "https://elevenlabs.io",
+    privacyPolicy: "https://elevenlabs.io/privacy",
+    uuid: "ai-eleven-28"
+  },
+  {
+    id: "manus",
+    name: "Manus",
+    description: "Agente de IA autônomo para executar tarefas complexas de pesquisa e prospecção no piloto automático.",
+    icon: "https://www.google.com/s2/favicons?domain=manus.ai&sz=128",
+    category: "mcp",
+    type: "AI Agent",
+    status: "not_connected",
+    isNew: true,
+    author: "Manus AI",
+    website: "https://manus.ai",
+    privacyPolicy: "https://manus.ai/privacy",
+    uuid: "ai-manus-29"
   }
 ];
 
 export default function IntegrationsPage() {
   const { toast } = useToast();
+  const [integrations, setIntegrations] = useState<Integration[]>(INITIAL_INTEGRATIONS);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("apps");
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    // 1. Fetch current user and their active integrations
+    const fetchUserAndStatus = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        setUserId(session.user.id);
+        
+        try {
+          const res = await fetch(`${API_URL}/api/auth/status/${session.user.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            const activeIds: string[] = data.active_integrations || [];
+            
+            setIntegrations(prev => prev.map(item => 
+              activeIds.includes(item.id) ? { ...item, status: 'connected' as const } : item
+            ));
+          }
+        } catch (error) {
+          console.error('Failed to fetch integration status:', error);
+        }
+      }
+    };
+
+    fetchUserAndStatus();
+
+    // 2. Listen for messages from popup
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'AUTH_SUCCESS') {
+        const id = event.data.integrationId;
+        
+        setIntegrations(prev => prev.map(item => 
+          item.id === id ? { ...item, status: 'connected' as const } : item
+        ));
+        
+        toast({
+          title: "Conectado com sucesso!",
+          description: `A integração com o ${id} agora está ativa.`,
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [toast]);
 
   const filteredIntegrations = useMemo(() => {
-    return INITIAL_INTEGRATIONS.filter(item => {
+    return integrations.filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           item.description.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesTab = item.category === activeTab;
       return matchesSearch && matchesTab;
     });
-  }, [searchQuery, activeTab]);
+  }, [integrations, searchQuery, activeTab]);
 
   const recommendedIntegrations = useMemo(() => {
-    return INITIAL_INTEGRATIONS.filter(item => item.isNew || item.status === 'not_connected').slice(0, 2);
-  }, []);
+    return integrations.filter(item => item.isNew || item.status === 'not_connected').slice(0, 2);
+  }, [integrations]);
 
   const handleCardClick = (integration: Integration) => {
     setSelectedIntegration(integration);
     setIsModalOpen(true);
   };
 
-  const handleConnect = React.useCallback((id: string) => {
+  const handleConnect = React.useCallback((id: string, token?: string) => {
     setIsModalOpen(false);
-    toast({
-      title: "Iniciando conexão",
-      description: `Estamos redirecionando você para a autenticação do ${id}.`,
-    });
-  }, [toast]);
+
+    if (token) {
+      toast({
+        title: "Salvando chave...",
+        description: `Conectando ao provedor ${id}...`,
+      });
+
+      const saveToken = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/auth/save-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, provider: id, token })
+          });
+          if (res.ok) {
+            setIntegrations(prev => prev.map(item => item.id === id ? { ...item, status: 'connected' as const } : item));
+            toast({ title: "Conectado com sucesso", description: "A chave API foi criptografada e salva.", variant: "default" });
+          } else {
+            throw new Error("Failed to save token");
+          }
+        } catch (e) {
+          toast({ title: "Erro ao salvar", description: "Não foi possível sincronizar sua chave API.", variant: "destructive" });
+        }
+      };
+      saveToken();
+      return;
+    }
+    
+    // Lista de integrações que utilizam o nosso fluxo de OAuth
+    const oauthIntegrations = ['hubspot', 'pipedrive', 'salesforce'];
+    
+    if (oauthIntegrations.includes(id)) {
+      toast({
+        title: "Iniciando conexão",
+        description: `Conectando ao ${id}...`,
+      });
+      
+      const width = 600;
+      const height = 750;
+      const left = window.innerWidth / 2 - width / 2 + window.screenX;
+      const top = window.innerHeight / 2 - height / 2 + window.screenY;
+
+      // Abrir em popup para manter o contexto da página principal
+      window.open(
+        `${API_URL}/api/auth/integrations/${id}?userId=${userId || ''}`,
+        `Connect${id}`,
+        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`
+      );
+    } else {
+      toast({
+        title: "Em breve",
+        description: "Essa integração estará disponível nas próximas atualizações.",
+      });
+    }
+  }, [toast, userId]);
+
+  const handleDisconnect = React.useCallback(async (id: string) => {
+    if (!userId) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/disconnect/${userId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ provider: id })
+      });
+
+      if (res.ok) {
+        setIntegrations(prev => prev.map(item => 
+          item.id === id ? { ...item, status: 'not_connected' as const } : item
+        ));
+        setIsModalOpen(false);
+        toast({
+          title: "Desconectado",
+          description: `Integração com ${id} foi desativada com sucesso.`,
+          variant: "destructive"
+        });
+      } else {
+        throw new Error('Falha ao desconectar');
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível desconectar a ferramenta.",
+        variant: "destructive"
+      });
+    }
+  }, [toast, userId]);
 
   return (
     <div className="flex flex-col h-full space-y-10 max-w-6xl mx-auto w-full pb-20 px-4 pt-4 text-foreground">
@@ -488,6 +677,7 @@ export default function IntegrationsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
       />
 
       {/* Footer Info Hub */}

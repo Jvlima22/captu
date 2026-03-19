@@ -18,6 +18,7 @@ import MetricsPage from "./pages/MetricsPage";
 import AutomationsPage from "./pages/AutomationsPage";
 import SettingsPage from "./pages/SettingsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
+import AgentPage from "./pages/AgentPage";
 import NotFound from "./pages/NotFound";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -127,6 +128,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <IntegrationsPage />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/agent"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <AgentPage />
                   </AppLayout>
                 </ProtectedRoute>
               }
