@@ -29,6 +29,14 @@ const SALESFORCE_REDIRECT_URI = process.env.SALESFORCE_REDIRECT_URI ||
     ? 'https://captu.vercel.app/api/auth/callback/salesforce' 
     : 'http://localhost:3000/api/auth/callback/salesforce');
 
+// Slack Configuration
+const SLACK_CLIENT_ID = process.env.SLACK_CLIENT_ID;
+const SLACK_CLIENT_SECRET = process.env.SLACK_CLIENT_SECRET;
+const SLACK_REDIRECT_URI = process.env.SLACK_REDIRECT_URI ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://captu.vercel.app/api/auth/callback/slack'
+    : 'http://localhost:3000/api/auth/callback/slack');
+
 // Helper to generate dynamic Redirect URI
 const getRedirectUri = (req: any, id: string) => {
   const protocol = req.get('x-forwarded-proto') || req.protocol;
@@ -86,6 +94,16 @@ router.get('/integrations/:id', (req, res) => {
       return res.redirect(authUrl);
     }
     
+    if (id === 'slack') {
+      const state = encodeState(userId);
+      // Scopes defined in the Slack App Manifest, but we can also specify them here
+      const scopes = 'chat:write,channels:read,groups:read,im:read,mpim:read,users:read,incoming-webhook';
+      const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${SLACK_CLIENT_ID}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(getRedirectUri(req, id))}&state=${state}`;
+      
+      console.log('[Slack] Redirecting to:', authUrl);
+      return res.redirect(authUrl);
+    }
+    
     // Fallback or other tools
     res.status(404).json({ error: 'Integration flow not implemented yet for ' + id });
   } catch (error: any) {
@@ -101,6 +119,9 @@ router.get('/integrations/:id', (req, res) => {
 router.get('/callback/:id', async (req, res) => {
   const { id } = req.params;
   const { code, state: stateQuery } = req.query;
+  
+  console.log(`[Integrations] Callback recebido para: ${id}. Code: ${code ? 'PRESENTE' : 'AUSENTE'}`);
+  
   const { u: userId, v: verifier } = decodeState(stateQuery as string);
 
   if (!code) {
@@ -266,6 +287,61 @@ router.get('/callback/:id', async (req, res) => {
     } catch (error: any) {
       console.error('Salesforce Auth Error:', error.response?.data || error.message);
       return res.status(500).send('<h1>Erro na Autenticação (Salesforce)</h1><p>Não foi possível conectar ao Salesforce.</p>');
+    }
+  }
+
+  if (id === 'slack') {
+    try {
+      console.log('[Slack] Iniciando troca de code por token...');
+      // Slack uses oauth.v2.access
+      const params = new URLSearchParams({
+        client_id: SLACK_CLIENT_ID!,
+        client_secret: SLACK_CLIENT_SECRET!,
+        code: code as string,
+        redirect_uri: getRedirectUri(req, id),
+      });
+
+      const response = await axios.post('https://slack.com/api/oauth.v2.access', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      const data = response.data;
+      
+      if (!data.ok) {
+        throw new Error(data.error || 'Slack OAuth failed');
+      }
+
+      // data contains: access_token, team, bot_user_id, etc.
+      if (userId) {
+        await IntegrationService.saveIntegration(userId, 'slack', data);
+      }
+
+      console.log('Slack Auth Success for team:', data.team?.name);
+
+      return res.send(`
+        <html>
+          <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+            <div style="background: #4A154B; color: white; padding: 20px; border-radius: 50%; width: 80px; height: 80px; line-height: 80px; margin: 0 auto 20px; font-size: 40px; font-weight: bold;">S</div>
+            <h1 style="color: #4A154B;">Slack Conectado!</h1>
+            <p>O CAPTU agora pode enviar notificações para o seu Slack.</p>
+            <p>Você pode fechar esta janela agora.</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ 
+                  type: 'AUTH_SUCCESS', 
+                  integrationId: 'slack' 
+                }, '*');
+              }
+              setTimeout(() => window.close(), 2500);
+            </script>
+          </body>
+        </html>
+      `);
+    } catch (error: any) {
+      console.error('Slack Auth Error:', error.response?.data || error.message);
+      return res.status(500).send('<h1>Erro na Autenticação (Slack)</h1><p>Não foi possível conectar ao Slack.</p>');
     }
   }
 

@@ -251,10 +251,24 @@ router.post('/webhook', async (req, res) => {
     const event = req.body;
     const instance = event.instance;
     try {
-        // Invalida o cache quando há nova mensagem
-        if (event.data?.key?.remoteJid) {
-            EvolutionService.invalidateCache(instance, event.data.key.remoteJid);
+        const jid = event.data?.key?.remoteJid;
+        const pushName = event.data?.pushName;
+        
+        // Invalida o cache e tenta atualizar os metadados se houver um nome disponível
+        if (jid) {
+            EvolutionService.invalidateCache(instance, jid);
+            
+            // Se recebemos um pushName real, atualizamos o cache de metadados
+            if (pushName && !/^\d+$/.test(pushName)) {
+                // Tenta atualizar o cache de metadados existente ou criar novo
+                (EvolutionService as any).metadataCache?.set(jid, { 
+                    name: pushName, 
+                    avatar: event.data?.profilePicUrl || '', 
+                    ts: Date.now() 
+                });
+            }
         }
+        
         // Broadcast segmentado por instância
         if (supabase && instance) {
             supabase.channel('presence-global').send({

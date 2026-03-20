@@ -172,9 +172,13 @@ export class EvolutionService {
                     integration: 'WHATSAPP-BAILEYS',
                     webhook: {
                         enabled: true,
-                        url: "http://localhost:3000/api/chat/webhook",
+                        url: "http://host.docker.internal:3000/api/chat/webhook",
                         events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "MESSAGES_DELETE", "CHATS_UPSERT", "CONTACTS_UPSERT", "CONNECTION_UPDATE"]
-                    }
+                    },
+                    // Opções recomendadas para v2 - força a sincronização de nomes e fotos
+                    syncFullHistory: true,
+                    syncContacts: true,
+                    syncLid: true
                 },
                 { headers: { 'apiKey': EVOLUTION_API_KEY } }
             );
@@ -290,28 +294,139 @@ export class EvolutionService {
         EvolutionService.messageCache.clear();
     }
 
+    public static metadataCache: Map<string, { name: string, avatar: string, ts: number }> = new Map();
+    private static readonly METADATA_TTL_MS = 30 * 60 * 1000; // 30 minutos
+
+    /**
+     * Formata um número de JID para um formato legível (DDD + Telefone)
+     * Lida com números brasileiros, o 9 extra e limpa identificadores internos (LIDs)
+     */
+    private static formatPhoneNumber(jid: string, contact?: any): string {
+        try {
+            // Se o contato tem um número real (fora o JID interno), usamos ele
+            let number = contact?.number || contact?.phoneNumber || jid.split('@')[0];
+            
+            // Remove qualquer caractere não numérico se houver
+            number = number.replace(/\D/g, '');
+
+            // Se for um identificador muito longo (LID), não tentamos formatar como telefone se não tivermos o real
+            if (number.length > 15 && (!contact?.number && !contact?.phoneNumber)) {
+                return ''; 
+            }
+
+            // Tratamento para números brasileiros (55...)
+            if (number.startsWith('55')) {
+                const ddd = number.slice(2, 4);
+                const rest = number.slice(4);
+                if (rest.length === 9) {
+                    return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+                } else if (rest.length === 8) {
+                    return `(${ddd}) 9${rest.slice(0, 4)}-${rest.slice(4)}`; // Adiciona o 9 se faltar
+                }
+                return `(${ddd}) ${rest}`;
+            }
+
+            return number;
+        } catch (e) {
+            return jid.split('@')[0];
+        }
+    }
+
     static async fetchChats(instance: string) {
         try {
-            const response = await axios.post(
-                `${EVOLUTION_API_URL}/chat/findChats/${instance}`,
-                {},
-                { headers: { 'apiKey': EVOLUTION_API_KEY } }
-            );
-            if (!Array.isArray(response.data)) return [];
-            return response.data.map((c: any) => {
+            const [chatsRes, contactsRes] = await Promise.all([
+                axios.post(`${EVOLUTION_API_URL}/chat/findChats/${instance}`, {}, { headers: { 'apiKey': EVOLUTION_API_KEY } }),
+                axios.post(`${EVOLUTION_API_URL}/chat/findContacts/${instance}`, {}, { headers: { 'apiKey': EVOLUTION_API_KEY } })
+            ]);
+
+            const chats = Array.isArray(chatsRes.data) ? chatsRes.data : [];
+            const contacts = Array.isArray(contactsRes.data) ? contactsRes.data : [];
+            
+            // Cria dois mapas: um por JID e outro por Nome para cruzamento fallback
+            const contactByJid = new Map();
+            const contactByName = new Map();
+            
+            contacts.forEach((c: any) => {
                 const jid = c.remoteJid || c.id;
+                if (jid) contactByJid.set(jid, c);
+                // Se tem um nome real, mapeia por ele também (ajuda com LIDs)
+                if (c.name && !/^\d+$/.test(c.name)) contactByName.set(c.name.toLowerCase(), c);
+                if (c.pushName && !/^\d+$/.test(c.pushName)) contactByName.set(c.pushName.toLowerCase(), c);
+            });
+
+            const enrichedChats = await Promise.all(chats.map(async (c: any) => {
+                const jid = c.remoteJid || c.id;
+                const isGroup = jid.endsWith('@g.us');
+                
+                // Tenta cruzamento por JID primeiro, depois por Nome
+                const contact = contactByJid.get(jid) || contactByName.get((c.name || c.pushName || '').toLowerCase());
+                
+                // Tenta do cache
+                const cached = EvolutionService.metadataCache.get(jid);
+                if (cached && Date.now() - cached.ts < EvolutionService.METADATA_TTL_MS) {
+                    return {
+                        id:              jid,
+                        name:            cached.name,
+                        phoneNumber:     EvolutionService.formatPhoneNumber(jid, contact),
+                        avatar:          cached.avatar,
+                        lastMessage:     extractTextFromWhatsAppMessage(c.lastMessage),
+                        lastMessageTime: toTimestampMs(c.lastMessage?.messageTimestamp || c.conversationTimestamp),
+                        unreadCount:     c.unreadCount || 0,
+                        type:            isGroup ? 'group' : 'individual'
+                    };
+                }
+
+                // Hierarquia de nomes: Nome Agenda -> Nome Grupo -> Nome Chat -> Push Name -> Telefone Formatado
+                let name = contact?.name || contact?.pushName || c.subject || c.name || c.pushName;
+                let avatar = c.profilePicUrl || contact?.profilePicUrl || null;
+
+                const formattedNum = EvolutionService.formatPhoneNumber(jid, contact);
+
+                // Busca reforçada para grupos (timeout maior para garantir 100%)
+                if (isGroup && (!name || /^\d+$/.test(name))) {
+                    try {
+                        const meta = await axios.get(`${EVOLUTION_API_URL}/group/findGroupInfos/${instance}?groupJid=${jid}`, { headers: { 'apiKey': EVOLUTION_API_KEY }, timeout: 3500 });
+                        if (meta.data?.subject) name = meta.data.subject;
+                    } catch (e) {
+                        try {
+                            const meta2 = await axios.get(`${EVOLUTION_API_URL}/group/findMetadata/${instance}/${jid}`, { headers: { 'apiKey': EVOLUTION_API_KEY }, timeout: 3500 });
+                            if (meta2.data?.subject) name = meta2.data.subject;
+                        } catch (e2) {}
+                    }
+                }
+
+                // Busca forçada de avatar (se o contato tiver, usamos; senão, pedimos)
+                if (!avatar) {
+                    try {
+                        const pic = await axios.get(`${EVOLUTION_API_URL}/chat/fetchProfilePicture/${instance}?number=${jid}`, { headers: { 'apiKey': EVOLUTION_API_KEY }, timeout: 3000 });
+                        if (pic.data?.profilePictureUrl) avatar = pic.data.profilePictureUrl;
+                    } catch (e) {}
+                }
+
+                let finalName = name;
+                // Se ainda for um ID numérico ou nulo, aplica o fallback visual
+                if (!finalName || /^\d{10,}$/.test(finalName)) {
+                    finalName = isGroup ? `Grupo (${jid.split('@')[0].slice(-4)})` : (formattedNum || jid.split('@')[0]);
+                }
+
+                const finalAvatar = avatar;
+                EvolutionService.metadataCache.set(jid, { name: finalName, avatar: finalAvatar || '', ts: Date.now() });
+
                 return {
                     id:              jid,
-                    name:            c.pushName || c.name || jid.split('@')[0],
-                    phoneNumber:     jid.split('@')[0],
-                    avatar:          c.profilePicUrl || null,
+                    name:            finalName,
+                    phoneNumber:     formattedNum,
+                    avatar:          finalAvatar,
                     lastMessage:     extractTextFromWhatsAppMessage(c.lastMessage),
                     lastMessageTime: toTimestampMs(c.lastMessage?.messageTimestamp || c.conversationTimestamp),
                     unreadCount:     c.unreadCount || 0,
-                    type:            jid.endsWith('@g.us') ? 'group' : 'individual'
+                    type:            isGroup ? 'group' : 'individual'
                 };
-            });
+            }));
+
+            return enrichedChats.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
         } catch (error: any) {
+            console.error('[Evolution] Error fetching enriched chats:', error.message);
             return [];
         }
     }

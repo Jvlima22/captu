@@ -510,7 +510,7 @@ export default function IntegrationsPage() {
     }
     
     // Lista de integrações que utilizam o nosso fluxo de OAuth
-    const oauthIntegrations = ['hubspot', 'pipedrive', 'salesforce'];
+    const oauthIntegrations = ['hubspot', 'pipedrive', 'salesforce', 'slack'];
     
     if (oauthIntegrations.includes(id)) {
       toast({

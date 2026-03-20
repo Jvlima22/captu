@@ -64,6 +64,15 @@ export const AI_MODELS_CONFIG: AIModel[] = [
     description: 'Pesquisa web · Em breve',
     isAvailable: false,
   },
+  {
+    id: 'manus',
+    name: 'Manus',
+    provider: 'Manus AI',
+    icon: 'https://www.google.com/s2/favicons?domain=manus.ai&sz=128',
+    description: 'Agente autônomo · Pesquisa',
+    isAvailable: false, // Will be updated by useEffect/backend check
+    badge: 'Agent',
+  },
 ];
 
 interface AIModelSelectorProps {
