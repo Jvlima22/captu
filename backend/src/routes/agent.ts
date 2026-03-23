@@ -1,10 +1,12 @@
 import express from 'express';
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { IntegrationService } from '../services/integrationService.js';
 import { searchLeads } from '../services/googlePlaces.js';
 import { searchLinkedinCompanies } from '../services/linkedinSearch.js';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AgentDevService } from '../services/agentDevService.js';
+import { TerminalSessionManager } from '../services/terminalSessionManager.js';
 
 const router = express.Router();
 
@@ -213,19 +215,51 @@ const CAPTU_TOOLS = [
         required: ["command"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "acessar_web",
+      description: "Lê o conteúdo textual de qualquer URL da internet. Use quando o usuário fornecer um link ou pedir para consultar um site externo/GitHub.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "A URL completa da página web a ser consultada." }
+        },
+        required: ["url"]
+      }
+    }
   }
 ];
 
 // ─── DESPACHANTE CENTRAL DE FERRAMENTAS ──────────────────────────────────────
-async function handleToolCalls(toolCalls: any[], userId: string | undefined, dbClient: any, chatId?: string) {
+async function handleToolCalls(toolCalls: any[], userId: string | undefined, dbClient: any, chatId?: string, sendChunk?: (data: any) => void) {
   const results: any[] = [];
   
+  console.log(`[CAPTU AI] ToolCalls recebidos brutos:`, JSON.stringify(toolCalls, null, 2));
+
   for (const tool of toolCalls) {
     let toolResult: any;
-    const name = tool.function?.name || tool.name; 
-    const args = typeof tool.function?.arguments === 'string' ? JSON.parse(tool.function.arguments || '{}') : (tool.args || tool.function?.arguments || {});
+    
+    // Fallbacks melhores para name
+    let name = tool.function?.name || tool.name; 
+    if (!name && tool.function && typeof tool.function === 'string') name = tool.function; // Caso de formato esquisito
+    
+    // Tenta arrumar argumentos
+    let argsStr = tool.function?.arguments || tool.arguments || '{}';
+    if (typeof argsStr !== 'string') argsStr = JSON.stringify(argsStr);
+    
+    const args = typeof tool.function?.arguments === 'string' 
+       ? JSON.parse(tool.function.arguments || '{}') 
+       : (tool.args || tool.function?.arguments || tool.arguments || {});
 
     console.log(`[CAPTU AI] Executando Tool: ${name}`, args);
+
+    if (!name) {
+      console.error("[CAPTU AI] Nome da tool ausente! Ignorando chamada.", tool);
+      results.push({ name: 'unknown', callId: tool.id || 'unknown', result: { erro: 'Tool name missing' } });
+      continue;
+    }
 
     if (name === 'buscar_leads_qualificados') {
       const limit = args.limit || 10;
@@ -298,8 +332,25 @@ async function handleToolCalls(toolCalls: any[], userId: string | undefined, dbC
       const success = await AgentDevService.writeFile(args.path, args.content);
       toolResult = { sucesso: success };
     } else if (name === 'terminal_execute') {
-      const res = await AgentDevService.executeCommand(args.command);
-      toolResult = res;
+      let output = '';
+      if (sendChunk) sendChunk({ part: `\n[PENSANDO] Executando comando em background...\n` });
+      
+      const res = await TerminalSessionManager.getInstance().executeCommandInTerminal(args.command, (line, isStderr) => {
+        output += line + '\n';
+      });
+      toolResult = { ...res, fullOutput: output };
+    } else if (name === 'acessar_web') {
+      try {
+        if (sendChunk) sendChunk({ part: `\n[RESEARCH] Acessando URL: ${args.url}...\n` });
+        const { data: html } = await axios.get(args.url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }, timeout: 15000 });
+        const $ = cheerio.load(html);
+        $('script, style, noscript, svg, nav, footer, header').remove(); // limpa 
+        let text = $('body').text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20000) text = text.substring(0, 20000) + '...[CONTEÚDO TRUNCADO DEVIDO AO TAMANHO]';
+        toolResult = { sucesso: true, content: text };
+      } catch (e: any) {
+        toolResult = { error: `Erro ao acessar URL: ${e.message}` };
+      }
     } else if (name === 'read_codebase') {
       const tree = await AgentDevService.getFileTree();
       toolResult = { tree };
@@ -408,7 +459,7 @@ Sempre chame propose_patch para mudanças de código. Artefatos: [ARTIFACT type=
             const toolName = call.functionCall!.name;
             const log = `\n[PENSANDO] Executando ${toolName}...\n`;
             assistantReply += log; sendChunk({ part: log });
-            const toolResults = await handleToolCalls([call.functionCall], userId, dbClient, chatId);
+            const toolResults = await handleToolCalls([call.functionCall], userId, dbClient, chatId, sendChunk);
             await processGemini([{ functionResponse: { name: toolResults[0].name, response: { content: toolResults[0].result } } }]);
           }
         }
@@ -426,12 +477,18 @@ Sempre chame propose_patch para mudanças de código. Artefatos: [ARTIFACT type=
         let toolBuffer: any = {};
 
         await new Promise((resolve) => {
+          let sseBuffer = '';
           response.data.on('data', (chunk: any) => {
-            const lines = chunk.toString().split('\n');
+            sseBuffer += chunk.toString();
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || ''; // O último fragmento fica no buffer
+            
             for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const dataStr = line.substring(6).trim();
+              if (!line.trim().startsWith('data: ')) continue;
+              const dataStr = line.replace(/^data:\s*/, '').trim();
               if (dataStr === '[DONE]') continue;
+              if (!dataStr) continue;
+              
               try {
                 const data = JSON.parse(dataStr);
                 const delta = data.choices[0]?.delta;
@@ -444,7 +501,9 @@ Sempre chame propose_patch para mudanças de código. Artefatos: [ARTIFACT type=
                     if (tc.function?.arguments) toolBuffer[tc.index].function.arguments += tc.function.arguments;
                   }
                 }
-              } catch (e) {}
+              } catch (e) {
+                 console.error("[CAPTU AI] Erro ao fazer parse de chunk SSE:", e, "Data:", dataStr);
+              }
             }
           });
           response.data.on('end', resolve);
@@ -455,7 +514,7 @@ Sempre chame propose_patch para mudanças de código. Artefatos: [ARTIFACT type=
           responseMsg.tool_calls = toolCalls;
           const log = `\n[PENSANDO] Executando ferramentas...\n`;
           assistantReply += log; sendChunk({ part: log });
-          const toolResults = await handleToolCalls(toolCalls, userId, dbClient, chatId);
+          const toolResults = await handleToolCalls(toolCalls, userId, dbClient, chatId, sendChunk);
           currentMessages.push(responseMsg);
           toolResults.forEach(r => currentMessages.push({ role: 'tool', tool_call_id: r.callId, content: JSON.stringify(r.result) }));
         } else break;

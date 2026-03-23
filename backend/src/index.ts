@@ -12,6 +12,7 @@ import webhookRoutes from './routes/webhooks.js';
 import integrationRoutes from './routes/integrations.js';
 import agentRoutes from './routes/agent.js';
 import contextRoutes from './routes/context.js';
+import { createTerminalWss } from './routes/terminal.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -77,6 +78,10 @@ if (process.env.VERCEL) {
         console.error('[Server] Erro ao iniciar:', err);
         process.exit(1);
     });
+
+    // ─── WebSocket Terminal ───────────────────────────────────────────────────
+    createTerminalWss(server);
+    console.log('[Terminal] WebSocket disponível em ws://localhost:' + port + '/ws/terminal');
 }
 
 export default app;
