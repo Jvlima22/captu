@@ -18,16 +18,63 @@ export default function SearchPage() {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<any[] | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [searchType, setSearchType] = useState<"maps" | "linkedin">("maps");
+  const [searchType, setSearchType] = useState<"maps" | "linkedin" | "advanced">("maps");
 
-  // Filtros Avançados
+  // Filtros Avançados Maps
   const [radius, setRadius] = useState([15]); // km
   const [minRating, setMinRating] = useState([0]); // 0-5
   const [minReviews, setMinReviews] = useState(0);
   const [onlyWithoutWebsite, setOnlyWithoutWebsite] = useState(false);
   const [onlyWithPhone, setOnlyWithPhone] = useState(false);
 
+  // Campos Customizados Busca Avançada I.A. (n8n)
+  const [advancedBrand, setAdvancedBrand] = useState("");
+  const [advancedRole, setAdvancedRole] = useState("");
+  const [advancedCountry, setAdvancedCountry] = useState("Brasil");
+  const [advancedQuantity, setAdvancedQuantity] = useState(10);
+
   const handleSearch = async () => {
+    if (searchType === "advanced") {
+      if (!niche || !city || !advancedRole || !advancedCountry) return;
+      setSearching(true);
+      setShowAdvanced(false);
+
+      try {
+        const response = await fetch(`${API_URL}/api/leads/n8n-trigger`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            "Tipo de Estabelecimento": niche,
+            "Marca/Segmento": advancedBrand,
+            "Cargo Alvo": advancedRole,
+            "Pais": advancedCountry,
+            "Cidade/Estado": city,
+            "Quantidade": advancedQuantity
+          }),
+        });
+
+        if (!response.ok) throw new Error("Erro ao iniciar automação na I.A.");
+
+        toast.success(`Automação iniciada em segundo plano! 🚀`, {
+          description: `A Inteligência Artificial está prospectando. Seus leads aparecerão em breve no painel.`,
+          action: {
+            label: "Ver Leads",
+            onClick: () => navigate("/leads"),
+          },
+        });
+        
+        setResults(null);
+      } catch (error) {
+        console.error(error);
+        toast.error("Erro ao conectar com a I.A.", {
+          description: `Verifique se o seu servidor backend está rodando e conectado ao n8n.`,
+        });
+      } finally {
+        setSearching(false);
+      }
+      return;
+    }
+
     if (!niche || !city) return;
     setSearching(true);
     setShowAdvanced(false); // Oculta filtros avançados ao buscar
@@ -86,7 +133,7 @@ export default function SearchPage() {
       <PageHeader title="Buscar Empresas" description="Encontre e qualifique leads corporativos usando Google Maps ou LinkedIn" />
 
       {/* Seletor de Origem */}
-      <div className="flex p-1 bg-muted/30 rounded-xl w-fit mb-6 border border-border/50">
+      <div className="flex p-1 bg-muted/30 rounded-xl w-fit mb-6 border border-border/50 flex-wrap gap-1">
         <Button 
           variant={searchType === "maps" ? "default" : "ghost"} 
           size="sm"
@@ -105,6 +152,15 @@ export default function SearchPage() {
           <Linkedin className="h-4 w-4 mr-2" />
           LinkedIn
         </Button>
+        <Button 
+          variant={searchType === "advanced" ? "default" : "ghost"} 
+          size="sm"
+          onClick={() => { setSearchType("advanced"); setResults(null); }}
+          className={`rounded-lg px-6 transition-all ${searchType === "advanced" ? "shadow-md bg-purple-600 text-white hover:bg-purple-700" : "hover:text-purple-500"}`}
+        >
+          <Star className="h-4 w-4 mr-2" />
+          Busca Avançada (I.A.)
+        </Button>
       </div>
 
       <div className="glass-card rounded-xl p-6 mb-8 max-w-4xl">
@@ -114,18 +170,70 @@ export default function SearchPage() {
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                 <Building2 className="h-3.5 w-3.5 text-primary" />
-                Nicho / Segmento
+                {searchType === "advanced" ? "Nicho / Tipo de Estabelecimento" : "Nicho / Segmento"}
               </Label>
               <div className="relative group">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                 <Input
-                  placeholder={searchType === "maps" ? "Ex: Oficina Mecânica, Restaurante..." : "Ex: Software, Advocacia, Marketing..."}
+                  placeholder={searchType === "maps" ? "Ex: Oficina Mecânica, Restaurante..." : searchType === "advanced" ? "Ex: Concessionária, Loja de Fábrica..." : "Ex: Software, Advocacia, Marketing..."}
                   className="pl-10 h-12 md:h-11 transition-all"
                   value={niche}
                   onChange={(e) => setNiche(e.target.value)}
                 />
               </div>
             </div>
+
+            {searchType === "advanced" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Star className="h-3.5 w-3.5 text-primary" />
+                  Marca / Segmento (Opcional)
+                </Label>
+                <div className="relative group">
+                  <Input
+                    placeholder="Ex: Toyota, Pediatria, SaaS..."
+                    className="pl-4 h-12 md:h-11 transition-all"
+                    value={advancedBrand}
+                    onChange={(e) => setAdvancedBrand(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {searchType === "advanced" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                  Cargo Alvo (Decisor)
+                </Label>
+                <div className="relative group">
+                  <Input
+                    placeholder="Ex: Gerente de Vendas, Sócio, CEO..."
+                    className="pl-4 h-12 md:h-11 transition-all"
+                    value={advancedRole}
+                    onChange={(e) => setAdvancedRole(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {searchType === "advanced" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Globe className="h-3.5 w-3.5 text-primary" />
+                  País
+                </Label>
+                <div className="relative group">
+                  <Input
+                    placeholder="Ex: Brasil, Portugal..."
+                    className="pl-4 h-12 md:h-11 transition-all"
+                    value={advancedCountry}
+                    onChange={(e) => setAdvancedCountry(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                 <MapPin className="h-3.5 w-3.5 text-primary" />
@@ -141,6 +249,25 @@ export default function SearchPage() {
                 />
               </div>
             </div>
+
+            {searchType === "advanced" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Filter className="h-3.5 w-3.5 text-primary" />
+                  Quantidade de Leads ({advancedQuantity})
+                </Label>
+                <div className="relative group flex items-center gap-4 h-12 md:h-11 px-2">
+                  <Slider
+                    value={[advancedQuantity]}
+                    onValueChange={(val) => setAdvancedQuantity(val[0])}
+                    min={1}
+                    max={100}
+                    step={1}
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Toggle Filtros Avançados (Apenas Maps por enquanto) */}
@@ -364,19 +491,19 @@ export default function SearchPage() {
           {/* Botão de Busca */}
           <Button
             onClick={handleSearch}
-            disabled={!niche || !city || searching}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 h-12 text-base"
+            disabled={searchType === "advanced" ? (!niche || !city || !advancedRole || !advancedCountry || searching) : (!niche || !city || searching)}
+            className={`w-full font-bold shadow-lg h-12 text-base ${searchType === "advanced" ? "bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20" : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20"}`}
             size="lg"
           >
             {searching ? (
               <>
                 <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                {searchType === "maps" ? "Coletando do Maps..." : "Mapeando LinkedIn..."}
+                {searchType === "maps" ? "Coletando do Maps..." : searchType === "advanced" ? "Iniciando I.A. de Prospecção..." : "Mapeando LinkedIn..."}
               </>
             ) : (
               <>
                 <Search className="h-5 w-5 mr-2" />
-                {searchType === "maps" ? "Buscar e Salvar Leads" : "Localizar Empresas no LinkedIn"}
+                {searchType === "maps" ? "Buscar e Salvar Leads" : searchType === "advanced" ? "Iniciar Máquina de Vendas (I.A.)" : "Localizar Empresas no LinkedIn"}
               </>
             )}
           </Button>

@@ -158,13 +158,17 @@ function AssistantContent({ message, isComplex, onResend }: { message: Message; 
                 h5({node, ...props}) { return <h5 className="text-[11px] font-extrabold mt-3 mb-1 uppercase text-muted-foreground/90 tracking-widest border-l-2 border-primary pl-2" {...props} /> },
                 p({node, ...props}) { return <p className="mb-4 last:mb-0 whitespace-pre-wrap break-words" {...props} /> },
                 hr({node, ...props}) { return <hr className="my-8 border-border/50" {...props} /> },
-                code({node, inline, className, children, ...props}: any) {
+                code({node, className, children, ...props}: any) {
                   const match = /language-(\w+)/.exec(className || '');
                   const language = match ? match[1] : '';
                   const codeContent = String(children).replace(/\n$/, '');
                   
-                  // Se for um bloco de código (não inline)
-                  if (!inline) {
+                  // Fallback para versões mais recentes do ReactMarkdown
+                  // Consideramos inline se NÃO tem quebra de linha E NÃO especificou language
+                  const isInline = !match && !codeContent.includes('\n');
+                  
+                  // Se for um bloco de código (ex: ```json ou tem multi-linhas)
+                  if (!isInline) {
                     // Critérios para transformar em Artifact Card: 
                     // 1. Ser multi-linha (código real estruturado)
                     // 2. Ter um comprimento substancial (comandos complexos)
@@ -182,16 +186,16 @@ function AssistantContent({ message, isComplex, onResend }: { message: Message; 
                       );
                     }
                     
-                    // Fallback para blocos de código curtos/simples (sem ser Artifact)
+                    // Fallback para blocos de código curtos/simples (sem ser Artifact) mas ainda blocos
                     return (
-                      <pre className="p-3 bg-muted/50 rounded-lg border border-border/40 my-2 overflow-x-auto">
+                      <pre className="p-3 bg-muted/50 rounded-lg border border-border/40 my-2 overflow-x-auto block">
                         <code className={cn("text-[13px] font-mono", className)} {...props}>{children}</code>
                       </pre>
                     );
                   }
                   
-                  // Código inline simples
-                  return <code className={cn("bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono", className)} {...props}>{children}</code>;
+                  // Código inline simples (como `main` ou `.vscode/`)
+                  return <code className={cn("bg-[#1e1e1e] border border-[#30363d] text-[#e6edf3] px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-mono font-medium shadow-sm break-keep", className)} {...props}>{children}</code>;
                 }
               }}
             >

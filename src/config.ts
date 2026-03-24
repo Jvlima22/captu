@@ -17,12 +17,12 @@
 //    - VITE_WA_API_URL  → URL do backend Railway com WhatsApp
 // ─────────────────────────────────────────────────────────────────────────────
 
-const isLocalhost =
+export const isLocalhost =
     typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1' ||
-        window.location.hostname.startsWith('192.168.') ||  // rede local
-        window.location.hostname.startsWith('10.'));        // rede local corporativa
+        window.location.hostname.startsWith('192.168.') ||
+        window.location.hostname.startsWith('10.'));
 
 // Variáveis de ambiente do Vite (opcionais, sobrescrevem tudo)
 const envApiUrl = import.meta.env.VITE_API_URL as string | undefined;

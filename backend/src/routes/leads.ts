@@ -312,5 +312,26 @@ router.post('/:id/generate-copy', async (req, res) => {
     }
 });
 
-export default router;
+// POST /api/leads/n8n-trigger - Dispara a Busca Avançada no n8n
+router.post('/n8n-trigger', async (req, res) => {
+    const payload = req.body;
+    try {
+        // Tentamos usar a variável de ambiente ou o default apontando pro n8n em PRODUÇÃO (sem -test)
+        const n8nWebhookUrl = process.env.N8N_ADVANCED_SEARCH_WEBHOOK || 'https://n8n.tglsolutions.com.br/webhook/captu-busca-ia';
+        
+        console.log(`[n8n-trigger] Mandando requisição para Busca Avançada em: ${n8nWebhookUrl}`);
+        
+        // Dispara o payload diretamente! N8n já engole o json root em $json.body
+        const response = await axios.post(n8nWebhookUrl, payload);
+        
+        res.status(200).json({ 
+            message: 'Automação iniciada com sucesso. Os leads serão salvos no banco de dados.', 
+            n8n_status: response.status 
+        });
+    } catch (error: any) {
+        console.error('[n8n-trigger] Erro ao comunicar com n8n:', error.message);
+        res.status(500).json({ error: 'Erro de comunicação com o webhook do n8n.' });
+    }
+});
 
+export default router;

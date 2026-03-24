@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Trash2, Download, Plus, MessageSquare, PanelLeft, PanelLeftClose, Search, Brain, Share2, Globe } from 'lucide-react';
+import { Sparkles, Trash2, Download, Plus, MessageSquare, PanelLeft, PanelLeftClose, Search, Brain, Share2, Globe, Terminal } from 'lucide-react';
 import { AgentContextManager } from '@/components/agent/AgentContextManager';
+import { TerminalPanel } from '@/components/agent/TerminalPanel';
 import { Button } from '@/components/ui/button';
 import { MessageBubble, Message } from '@/components/agent/MessageBubble';
 import { ChatInput, ChatInputHandle } from '@/components/agent/ChatInput';
 import { AgentPendingChanges } from '@/components/agent/AgentPendingChanges';
 import { AIModelSelector, AI_MODELS_CONFIG, AIModel } from '@/components/agent/AIModelSelector';
-import { API_URL } from '@/config';
+import { API_URL, isLocalhost } from '@/config';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -48,6 +49,7 @@ export default function AgentPage() {
   const [userSession, setUserSession] = useState<any>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isContextOpen, setIsContextOpen] = useState(false);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const { toast } = useToast();
   
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -297,6 +299,11 @@ export default function AgentPage() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.substring(6));
+                
+                if (data.openTerminal) {
+                  setIsTerminalOpen(true);
+                }
+
                 if (data.part) {
                   assistantReply += data.part;
                   
@@ -314,7 +321,7 @@ export default function AgentPage() {
                 }
                 if (data.error) throw new Error(data.error);
               } catch (e) {
-                console.warn('Erro ao parsear chunk:', e);
+                // Ignore empty or unparseable chunks
               }
             }
           }
@@ -490,6 +497,24 @@ export default function AgentPage() {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
+            {/* Botão de Terminal — só aparece em ambiente local */}
+            {isLocalhost && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "w-9 h-9 rounded-xl transition-all",
+                  isTerminalOpen
+                    ? "text-[#3fb950] bg-[#3fb950]/10 hover:bg-[#3fb950]/20"
+                    : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+                )}
+                onClick={() => setIsTerminalOpen(prev => !prev)}
+                title="Abrir Terminal (PowerShell — apenas local)"
+              >
+                <Terminal className="w-4 h-4" />
+              </Button>
+            )}
+
             <Button
               variant="ghost"
               size="icon"
@@ -498,7 +523,7 @@ export default function AgentPage() {
               title="Ajustar Base de Conhecimento (Contexto)"
             >
               
-              <Brain className="w-4 h-4 text-green-500"/>
+              <Brain className="w-4 h-4 text-muted-foreground"/>
             </Button>
 
             <AIModelSelector selected={selectedModel} onSelect={setSelectedModel} />
@@ -604,6 +629,14 @@ export default function AgentPage() {
         isOpen={isContextOpen} 
         onClose={() => setIsContextOpen(false)} 
       />
+
+      {/* Terminal Embutido — apenas local */}
+      {isLocalhost && (
+        <TerminalPanel
+          isOpen={isTerminalOpen}
+          onClose={() => setIsTerminalOpen(false)}
+        />
+      )}
     </div>
   );
 }
